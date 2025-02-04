@@ -1,0 +1,10 @@
+# ROS2 build and install directories
+/build/
+/install/
+/log/
+/.colcon/
+
+# VS Code and other editor settings
+.vscode/
+.idea/
+*.swp
