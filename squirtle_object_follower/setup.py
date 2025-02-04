@@ -19,7 +19,8 @@ setup(
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': [
+        'console_scripts': ['find_object=squirtle_object_follower.find_object:main',
+			'rotate_robot=squirtle_object_follower.rotate_robot:main'
         ],
     },
 )
