@@ -59,10 +59,13 @@ class MinimalVideoSubscriber(Node):
         coord = None  # Default value in case no contours are found
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
-            
-            coord = [float(x + w // 2), float(y + h // 2), float(width//2), float(height//2)] #centroid x, centroid y, image center x, image center y
-
-        self._coordinates = coord  # Store detected coordinates
+                
+            if w > 0 and h > 0:
+                coord = [float(x + w // 2), float(y + h // 2), float(width//2), float(height//2)] #centroid x, centroid y, image center x, image center y
+                self._coordinates = coord  # Store detected coordinates
+            else:
+                coord = [float(width//2), float(height//2), float(width//2), float(height//2)]
+                self._coordinates = coord  # Store detected coordinates
     
     def timer_callback(self):
         if self._coordinates is not None:
