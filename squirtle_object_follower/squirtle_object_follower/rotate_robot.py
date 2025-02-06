@@ -51,7 +51,7 @@ class MinimalSubscriber(Node):
             error = centroid[0] - center_camera_x
             if abs(error) > 30:
                 # calculate input to rotate the robot
-                self.robo_cmd_vel = (-0.01) * error
+                self.robo_cmd_vel = (-0.005) * error
             else:
                 self.robo_cmd_vel = 0.0
         else:
