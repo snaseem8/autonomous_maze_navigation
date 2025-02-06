@@ -20,8 +20,8 @@ class MinimalSubscriber(Node):
         self.timer = self.create_timer(0.1, self.timer_callback) # 0.1 second timer
 
         
-        # Set up QoS Profiles for passing images over WiFi
-        image_qos_profile = QoSProfile(depth=1)
+        # Set up QoS Profiles for passing data over WiFi
+        image_qos_profile = QoSProfile(depth=10)
         image_qos_profile.history = QoSHistoryPolicy.KEEP_LAST
         image_qos_profile.durability = QoSDurabilityPolicy.VOLATILE 
         image_qos_profile.reliability = QoSReliabilityPolicy.BEST_EFFORT 
@@ -43,13 +43,17 @@ class MinimalSubscriber(Node):
 
     def cmd_vel_callback(self, centroid_msg):    
         centroid = centroid_msg.data
+        
         if centroid is not None:
             # calculate error between the object centroid and the center of the camera view
             center_camera_x = centroid[2]
             center_camera_y = centroid[3]
             error = centroid[0] - center_camera_x
-            # calculate input to rotate the robot
-            self.robo_cmd_vel = (-0.01) * error
+            if abs(error) > 20:
+                # calculate input to rotate the robot
+                self.robo_cmd_vel = (-0.0025) * error
+            else:
+                self.robo_cmd_vel = 0.0
         else:
             self.robo_cmd_vel = 0.0
 
