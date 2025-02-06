@@ -49,8 +49,8 @@ class MinimalVideoSubscriber(Node):
 
         # Convert to HSV
         frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        lower_hsv = (90, 50, 50)
-        upper_hsv = (130, 255, 255)
+        lower_hsv = (0, 142, 113)
+        upper_hsv = (12, 222, 193)
 
         # Create mask and find contours
         mask = cv2.inRange(frame_hsv, lower_hsv, upper_hsv)
@@ -60,7 +60,7 @@ class MinimalVideoSubscriber(Node):
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
                 
-            if w > 20 and h > 20:
+            if w >= 1 and h >= 1:
                 coord = [float(x + w // 2), float(y + h // 2), float(width//2), float(height//2)] #centroid x, centroid y, image center x, image center y
                 self._coordinates = coord  # Store detected coordinates
             else:
