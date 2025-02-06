@@ -41,8 +41,8 @@ class MinimalSubscriber(Node):
             image_qos_profile)
         self.cmd_vel_publisher  # Prevents unused variable warning.
 
-    def cmd_vel_callback(self, centroid):    
-        self.centroid = centroid
+    def cmd_vel_callback(self, centroid_msg):    
+        centroid = centroid_msg.data
         # calculate error between the object centroid and the center of the camera view
         w = centroid[2]
         h = centroid[3]
