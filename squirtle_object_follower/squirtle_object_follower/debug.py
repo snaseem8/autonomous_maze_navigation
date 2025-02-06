@@ -1,113 +1,98 @@
-# Bare Bones Code to View the Image Published from the Turtlebot3 on a Remote Computer
-# Intro to Robotics Research 7785
-# Georgia Institute of Technology
-# Sean Wilson, 2022
-
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
 
-import sys
-
-import numpy as np
 import cv2
+import numpy as np
 from cv_bridge import CvBridge
 
 class MinimalVideoSubscriber(Node):
+    def __init__(self):
+        super().__init__('minimal_video_subscriber')
 
-	def __init__(self):		
-		# Creates the node.
-		super().__init__('minimal_video_subscriber')
+        # Set Parameters
+        self.declare_parameter('show_image_bool', True)
+        self.declare_parameter('window_name', "Raw Image")
 
-		# Set Parameters
-		self.declare_parameter('show_image_bool', True)
-		self.declare_parameter('window_name', "Raw Image")
+        # Determine Window Showing Based on Input
+        self._display_image = bool(self.get_parameter('show_image_bool').value)
 
-		#Determine Window Showing Based on Input
-		self._display_image = bool(self.get_parameter('show_image_bool').value)
+        # Declare some variables
+        self._titleOriginal = self.get_parameter('window_name').value
+        if self._display_image:
+            cv2.namedWindow(self._titleOriginal, cv2.WINDOW_AUTOSIZE)
+            cv2.moveWindow(self._titleOriginal, 50, 50)
+            cv2.setMouseCallback(self._titleOriginal, self._click_event)  # Set mouse click event
 
-		# Declare some variables
-		self._titleOriginal = self.get_parameter('window_name').value # Image Window Title	
-		if(self._display_image):
-		# Set Up Image Viewing
-			cv2.namedWindow(self._titleOriginal, cv2.WINDOW_AUTOSIZE ) # Viewing Window
-			cv2.moveWindow(self._titleOriginal, 50, 50) # Viewing Window Original Location
-	
-		#Set up QoS Profiles for passing images over WiFi
-		image_qos_profile = QoSProfile(depth=5)
-		image_qos_profile.history = QoSHistoryPolicy.KEEP_LAST
-		image_qos_profile.durability = QoSDurabilityPolicy.VOLATILE 
-		image_qos_profile.reliability = QoSReliabilityPolicy.BEST_EFFORT 
+        # Default HSV range (placeholder, updated on click)
+        self.lower_hsv = np.array([90, 50, 50])
+        self.upper_hsv = np.array([130, 255, 255])
 
-		#Declare that the minimal_video_subscriber node is subcribing to the /camera/image/compressed topic.
-		self._video_subscriber = self.create_subscription(
-				CompressedImage,
-				'/image_raw/compressed',
-				self._image_callback,
-				image_qos_profile)
-		self._video_subscriber # Prevents unused variable warning.
+        # QoS for image streaming over WiFi
+        image_qos_profile = QoSProfile(depth=5)
+        image_qos_profile.history = QoSHistoryPolicy.KEEP_LAST
+        image_qos_profile.durability = QoSDurabilityPolicy.VOLATILE
+        image_qos_profile.reliability = QoSReliabilityPolicy.BEST_EFFORT
 
-	def _image_callback(self, CompressedImage):	
-		# Convert ROS2 compressed image to OpenCV format
-		frame = CvBridge().compressed_imgmsg_to_cv2(CompressedImage, "bgr8")
+        # Subscribe to the /image_raw/compressed topic
+        self._video_subscriber = self.create_subscription(
+            CompressedImage,
+            '/image_raw/compressed',
+            self._image_callback,
+            image_qos_profile
+        )
 
-		# Get frame dimensions
-		height, width, _ = frame.shape
+        self.frame = None  # Store the latest frame
 
-		# Convert frame to HSV color space
-		frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-		lower_hsv = (90, 50, 50)
-		upper_hsv = (130, 255, 255)
+    def _click_event(self, event, x, y, flags, param):
+        """ Callback function to get HSV value from a clicked pixel. """
+        if event == cv2.EVENT_LBUTTONDOWN and self.frame is not None:
+            hsv_frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2HSV)
+            clicked_hsv = hsv_frame[y, x]  # Get HSV value at click
+            h, s, v = clicked_hsv
 
-		# Create a binary mask
-		mask = cv2.inRange(frame_hsv, lower_hsv, upper_hsv)
+            # Define a small range around the clicked HSV value
+            self.lower_hsv = np.array([max(0, h - 10), max(0, s - 40), max(0, v - 40)])
+            self.upper_hsv = np.array([min(179, h + 10), min(255, s + 40), min(255, v + 40)])
 
-		# Find contours in the mask
-		contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            print(f"Updated HSV Range: Lower {self.lower_hsv}, Upper {self.upper_hsv}")
 
-		for contour in contours:
-			x, y, w, h = cv2.boundingRect(contour)
-			print(x + w // 2, y + h // 2)
+    def _image_callback(self, CompressedImage):
+        """ Callback function to process incoming images. """
+        self.frame = CvBridge().compressed_imgmsg_to_cv2(CompressedImage, "bgr8")
+        height, width, _ = self.frame.shape
 
-			if w >= 50 or h >= 50:
-				cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 20), 3)
+        # Convert to HSV and apply thresholding with dynamic HSV range
+        frame_hsv = cv2.cvtColor(self.frame, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(frame_hsv, self.lower_hsv, self.upper_hsv)
 
-		# Display the processed frame
-		cv2.imshow('frame', frame)
+        # Find contours of detected object
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-		# Wait for key press and close window
-		if cv2.waitKey(1) == ord('q'):
-			cv2.destroyAllWindows()  # Close all OpenCV windows when 'q' is pressed
-				
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
 
-	def get_image(self):
-		return self._imgBGR
+            if w >= 50 or h >= 50:
+                cv2.rectangle(self.frame, (x, y), (x + w, y + h), (0, 255, 20), 3)
 
-	def get_user_input(self):
-		return self._user_input
+        # Display the processed frame
+        cv2.imshow(self._titleOriginal, self.frame)
 
-	def show_image(self, img):
-		cv2.imshow(self._titleOriginal, img)
-		# Cause a slight delay so image is displayed
-		self._user_input=cv2.waitKey(50) #Use OpenCV keystroke grabber for delay.Done
-		if self.get_user_input() == ord('q'):
-				cv2.destroyAllWindows()
-				raise SystemExit
-
+        if cv2.waitKey(1) == ord('q'):
+            cv2.destroyAllWindows()
 
 def main():
-	rclpy.init() #init routine needed for ROS2.
-	video_subscriber = MinimalVideoSubscriber() #Create class object to be used.
-	
-	try:
-		rclpy.spin(video_subscriber) # Trigger callback processing.		
-	except SystemExit:
-		rclpy.logging.get_logger("Camera Viewer Node Info...").info("Shutting Down")
-	#Clean up and shutdown.
-	video_subscriber.destroy_node()  
-	rclpy.shutdown()
-
+    rclpy.init()
+    video_subscriber = MinimalVideoSubscriber()
+    
+    try:
+        rclpy.spin(video_subscriber)
+    except SystemExit:
+        rclpy.logging.get_logger("Camera Viewer Node Info...").info("Shutting Down")
+    
+    video_subscriber.destroy_node()
+    rclpy.shutdown()
 
 if __name__ == '__main__':
-	main()
+    main()

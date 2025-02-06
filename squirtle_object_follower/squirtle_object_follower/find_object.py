@@ -60,7 +60,7 @@ class MinimalVideoSubscriber(Node):
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
                 
-            if w > 0 and h > 0:
+            if w > 20 and h > 20:
                 coord = [float(x + w // 2), float(y + h // 2), float(width//2), float(height//2)] #centroid x, centroid y, image center x, image center y
                 self._coordinates = coord  # Store detected coordinates
             else:
