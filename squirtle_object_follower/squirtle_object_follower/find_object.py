@@ -45,6 +45,7 @@ class MinimalVideoSubscriber(Node):
         # Convert ROS2 CompressedImage message to OpenCV image
         np_arr = np.frombuffer(pi_image.data, np.uint8)
         frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        height, width, _ = frame.shape
 
         # Convert to HSV
         frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -58,7 +59,8 @@ class MinimalVideoSubscriber(Node):
         coord = None  # Default value in case no contours are found
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
-            coord = [float(x + w // 2), float(y + h // 2), float(w), float(h)] #centroid x, centroid y, image width, image height
+            
+            coord = [float(x + w // 2), float(y + h // 2), float(width//2), float(height//2)] #centroid x, centroid y, image center x, image center y
 
         self._coordinates = coord  # Store detected coordinates
     
@@ -67,7 +69,7 @@ class MinimalVideoSubscriber(Node):
             coord_msg = Float32MultiArray()
             coord_msg.data = self._coordinates
             self._coordinate_publisher.publish(coord_msg)
-            self.get_logger().info('Publishing coordinates and image dimensions: (%.2f, %.2f, %.2f, %.2f)' % (self._coordinates[0], self._coordinates[1], self._coordinates[2], self._coordinates[3]))
+            self.get_logger().info('Publishing coordinates and image dimensions: %.2f, %.2f, %.2f, %.2f)' % (coord_msg.data[0], coord_msg.data[1], coord_msg.data[2], coord_msg.data[3]))
 
 def main():
     rclpy.init()  # Init routine needed for ROS2.

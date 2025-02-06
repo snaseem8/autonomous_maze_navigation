@@ -38,30 +38,33 @@ class MinimalSubscriber(Node):
         self.cmd_vel_publisher = self.create_publisher(
             Twist,
             '/cmd_vel',
-            image_qos_profile)
+            10)
         self.cmd_vel_publisher  # Prevents unused variable warning.
 
     def cmd_vel_callback(self, centroid_msg):    
         centroid = centroid_msg.data
-        # calculate error between the object centroid and the center of the camera view
-        w = centroid[2]
-        h = centroid[3]
-        error = centroid[0] - w
-        # calculate input to rotate the robot
-        self.robo_cmd_vel = (-0.001) * error[0]
+        if centroid is not None:
+            # calculate error between the object centroid and the center of the camera view
+            center_camera_x = centroid[2]
+            center_camera_y = centroid[3]
+            error = centroid[0] - center_camera_x
+            # calculate input to rotate the robot
+            self.robo_cmd_vel = (-0.01) * error
+        else:
+            self.robo_cmd_vel = 0.0
 
     def timer_callback(self):
         if self.robo_cmd_vel is not None:
             twist_msg = Twist()
-            twist_msg.linear.x = 0
-            twist_msg.linear.y = 0
-            twist_msg.linear.z = 0
-            twist_msg.angular.x = 0
-            twist_msg.angular.y = 0
-            
+            twist_msg.linear.x = 0.0
+            twist_msg.linear.y = 0.0
+            twist_msg.linear.z = 0.0
+            twist_msg.angular.x = 0.0
+            twist_msg.angular.y = 0.0
             twist_msg.angular.z = self.robo_cmd_vel
+            
             self.cmd_vel_publisher.publish(twist_msg)
-            self.get_logger().info('Publishing z angular velocity : {twist_msg.angular.z}')
+            self.get_logger().info('Publishing linear velocity (x,y,z): (%.2f, %.2f, %.2f)\n Publishing angular velocity (x,y,z): (%.2f, %.2f, %.2f)' % (twist_msg.linear.x, twist_msg.linear.y, twist_msg.linear.z, twist_msg.angular.x, twist_msg.angular.y, twist_msg.angular.z))
             
 
 def main():
