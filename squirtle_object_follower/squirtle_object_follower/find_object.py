@@ -67,7 +67,7 @@ class MinimalVideoSubscriber(Node):
             coord_msg = Float32MultiArray()
             coord_msg.data = self._coordinates
             self._coordinate_publisher.publish(coord_msg)
-            self.get_logger().info('Publishing coordinates: (%.2f, %.2f)' % (self._coordinates[0], self._coordinates[1]))
+            self.get_logger().info('Publishing coordinates and image dimensions: (%.2f, %.2f, %.2f, %.2f)' % (self._coordinates[0], self._coordinates[1], self._coordinates[2], self._coordinates[3]))
 
 def main():
     rclpy.init()  # Init routine needed for ROS2.

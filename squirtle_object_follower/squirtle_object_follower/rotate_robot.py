@@ -24,7 +24,7 @@ class MinimalSubscriber(Node):
         image_qos_profile = QoSProfile(depth=1)
         image_qos_profile.history = QoSHistoryPolicy.KEEP_LAST
         image_qos_profile.durability = QoSDurabilityPolicy.VOLATILE 
-        image_qos_profile.reliability = QoSReliabilityPolicy.BEST_EFFORT 
+        image_qos_profile.reliability = QoSReliabilityPolicy.RELIABLE 
 
         # Declare that the centroid_subscriber node is subscribing to the /camera_info topic.
         self.centroid_subscriber = self.create_subscription(
