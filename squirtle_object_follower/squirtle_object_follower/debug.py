@@ -1,3 +1,5 @@
+# Shahmeel Naseem, Evan Dodani
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
