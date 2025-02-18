@@ -36,7 +36,7 @@ class MinimalVideoSubscriber(Node):
             self._coord_callback,
             image_qos_profile)
         
-        # Declare that the minimal_video_subscriber node is publishing to the /distance_error topic.
+        # Declare that the minimal_video_subscriber node is publishing to the /object_distance topic.
         self._dist_publisher = self.create_publisher(
             Float32,
             '/object_distance',
@@ -52,10 +52,10 @@ class MinimalVideoSubscriber(Node):
 
     def _laser_callback(self, lidar_msg):
         # get lidar_data and compute weighted average of distance based on xL_angle and xR_angle from self.coord
-        desired_dist = 1.524  # desired distance from the object (meters) [5 ft]
+        desired_dist = 0.6  # desired distance from the object (meters)
 
         ranges = np.array(lidar_msg.ranges)   # distance data from the lidar scan [m], with it indexed. Corresponds to an angle value
-        ranges[(ranges < 0.1) | (ranges > 10)] = desired_dist  # mask to filter out the invalid data (like inf and NaN) also cap the max reliable distance to 10m
+        ranges[(ranges < 0.1) | (ranges > 5)] = desired_dist  # mask to filter out the invalid data (like inf and NaN) also cap the max reliable distance to 10m
         # instead of changing invalid data to 0 or deleting them, we simply set them to the desired distance so that the robot wont move (no error)
         
 

@@ -71,7 +71,8 @@ class MinimalSubscriber(Node):
         # add P controller for calculating linear_cmd_velocity
         obj_dist = obj_dist.data
         if obj_dist is not None:
-            dist_error = obj_dist - 1.524  # desired distance from the object (meters) [5 ft]
+            desired_distance = 0.6
+            dist_error = obj_dist - desired_distance  # desired distance from the object (meters)
             self.linear_cmd_velocity = (-0.005) * dist_error  # P controller
 
     def timer_callback(self):
