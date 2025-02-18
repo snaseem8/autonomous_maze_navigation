@@ -66,6 +66,9 @@ class MinimalSubscriber(Node):
                 self.angular_cmd_vel = 0.0
         else:
             self.angular_cmd_vel = 0.0
+
+        if self.angular_cmd_vel > 2.5:
+            self.angular_cmd_vel = 2.5
             
     def linear_vel_callback(self, obj_dist):
         # add P controller for calculating linear_cmd_velocity
@@ -74,9 +77,14 @@ class MinimalSubscriber(Node):
             desired_distance = 0.6
             dist_error = obj_dist - desired_distance  # desired distance from the object (meters)
             self.linear_cmd_velocity = (-0.005) * dist_error  # P controller
+            if self.linear_cmd_velocity > 0.18:
+                self.linear_cmd_velocity = 0.18
+        else:
+            self.linear_cmd_velocity = 0.0
+            
 
     def timer_callback(self):
-        if self.angular_cmd_vel & self.linear_cmd_velocity is not None:
+        if (self.angular_cmd_vel is not None) and (self.linear_cmd_velocity is not None):
             twist_msg = Twist()
             twist_msg.linear.x = self.linear_cmd_velocity
             twist_msg.linear.y = 0.0

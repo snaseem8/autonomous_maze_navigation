@@ -54,22 +54,26 @@ class MinimalVideoSubscriber(Node):
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         coord = None  # Default value in case no contours are found
+        xL = None
+        xR = None
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
-            xL = float(x) # this is because the bounding rectangle (x,y) is the top left corner
-            xR = float(x + w)
+            xL = width//2 - float(x)    # refer to Shahmeel Lab3 ROS Diagram notes
+            xR = width//2 - float(x + w)    # refer to Shahmeel Lab3 ROS Diagram notes
             centroid_x = x + w // 2
             centroid_y = y + h // 2
             if w >= 1 and h >= 1:
                 coord = [float(centroid_x), float(centroid_y), float(width//2), float(height//2)] #centroid x, centroid y, image center x, image center y
             else:
                 coord = [float(width//2), float(height//2), float(width//2), float(height//2)] # if bounding box returns 0s, set centroid to image center so there is no error
-                
-        # Convert x_object pixel value to degrees
-        xL_angle =  float(xL * (62.2 / width)) # 62.2 degrees is the horizontal field of view of the camera
-        xR_angle = float(xR * (62.2 / width))
-        
-        coord.extend([xL_angle, xR_angle])
+            if (xL is not None) and (xR is not None):    
+                # Convert x_object pixel value to degrees
+                xL_angle =  float(xL * (62.2 / width)) # 62.2 degrees is the horizontal field of view of the camera
+                xR_angle = float(xR * (62.2 / width))
+                coord.extend([xL_angle, xR_angle])
+            else:
+                coord.extend([0.0, 0.0])
+            
         self._coordinates = coord  # Store detected coordinates
     
     def timer_callback(self):
