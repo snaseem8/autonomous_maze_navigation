@@ -63,16 +63,12 @@ class MinimalVideoSubscriber(Node):
             centroid_x = x + w // 2
             centroid_y = y + h // 2
             if w >= 1 and h >= 1:
-                coord = [float(centroid_x), float(centroid_y), float(width//2), float(height//2)] #centroid x, centroid y, image center x, image center y
-            else:
-                coord = [float(width//2), float(height//2), float(width//2), float(height//2)] # if bounding box returns 0s, set centroid to image center so there is no error
-            if (xL is not None) and (xR is not None):    
                 # Convert x_object pixel value to degrees
                 xL_angle =  float(xL * (62.2 / width)) # 62.2 degrees is the horizontal field of view of the camera
                 xR_angle = float(xR * (62.2 / width))
-                coord.extend([xL_angle, xR_angle])
+                coord = [float(centroid_x), float(centroid_y), float(width//2), float(height//2), float(xL_angle), float(xR_angle)] #centroid x, centroid y, image center x, image center y
             else:
-                coord.extend([0.0, 0.0])
+                coord = [float(width//2), float(height//2), float(width//2), float(height//2), 0.0, 0.0] # if bounding box returns 0s, set centroid to image center so there is no error
             
         self._coordinates = coord  # Store detected coordinates
     

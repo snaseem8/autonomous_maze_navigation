@@ -58,31 +58,36 @@ class MinimalVideoSubscriber(Node):
         ranges[(ranges < 0.1) | (ranges > 5)] = desired_dist  # mask to filter out the invalid data (like inf and NaN) also cap the max reliable distance to 10m
         # instead of changing invalid data to 0 or deleting them, we simply set them to the desired distance so that the robot wont move (no error)
         
-
-        min_angle = lidar_msg.angle_min   # start angle of the lidar scan [rad]
-        max_angle = lidar_msg.angle_max   # end angle of the lidar scan [rad]
-        angle_increment = lidar_msg.angle_increment   # angular distance between measurements [rad]
-        if (xL_angle != 0) and (xR_angle != 0):
+        if self._coordinates is not None:
             xL_angle = np.deg2rad(self._coordinates[4])  # left-most angle of the bounding box in the camera view [rad]
             xR_angle = np.deg2rad(self._coordinates[5]) # right-most angle of the bounding box in the camera view [rad]
-            left_index = int(np.ceil((xL_angle - min_angle)/angle_increment))  # calculates the index of the left angle, rounds up to integer - this is to be safe
-            right_index = int(np.floor((xR_angle - min_angle)/angle_increment))   # calculates the index of the right angle, rounds down to integer
-            if (right_index < 0) and (left_index > 0):
-                np.roll(ranges, -right_index)
-                index = abs(left_index) + abs(right_index)
-                avg_dist = np.mean(ranges[0:index])  # calculates the average of the distances between the left and right angles
-                self.object_dist = avg_dist
+            
+            min_angle = lidar_msg.angle_min   # start angle of the lidar scan [rad]
+            max_angle = lidar_msg.angle_max   # end angle of the lidar scan [rad]
+            angle_increment = lidar_msg.angle_increment   # angular distance between measurements [rad]
+            if (xL_angle != 0) and (xR_angle != 0):            
+                left_index = int(np.ceil((xL_angle - min_angle)/angle_increment))  # calculates the index of the left angle, rounds up to integer - this is to be safe
+                right_index = int(np.floor((xR_angle - min_angle)/angle_increment))   # calculates the index of the right angle, rounds down to integer
+                if (right_index < 0) and (left_index > 0):
+                    np.roll(ranges, -right_index)
+                    index = abs(left_index) + abs(right_index)
+                    avg_dist = np.mean(ranges[0:index])  # calculates the average of the distances between the left and right angles
+                    self.object_dist = avg_dist
+                elif (right_index >= 0) and (left_index >= 0):
+                    avg_dist = np.mean(ranges[left_index:right_index])  # calculates the average of the distances between the left and right angles
+                    self.object_dist = avg_dist
+                elif (right_index < 0) and (left_index < 0):
+                    avg_dist = np.mean(ranges[left_index:right_index:-1])  # calculates the average of the distances between the left and right angles
+                    self.object_dist = avg_dist
             else:
-                avg_dist = np.mean(ranges[left_index:right_index])  # calculates the average of the distances between the left and right angles
-                self.object_dist = avg_dist
+                self.object_dist = desired_dist
         else:
             self.object_dist = desired_dist
-
     
     def timer_callback(self):
         if (self._coordinates is not None) and (self.object_dist is not None):
             object_dist = Float32()
-            object_dist.data = self.object_dist
+            object_dist.data = float(self.object_dist)
             self._dist_publisher.publish(object_dist)
             self.get_logger().info('Publishing object distance (depth): %.2f)' % (object_dist.data))
 
