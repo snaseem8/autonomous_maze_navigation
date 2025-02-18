@@ -56,16 +56,17 @@ class MinimalVideoSubscriber(Node):
         coord = None  # Default value in case no contours are found
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
-            xL = float(x)
+            xL = float(x) # this is because the bounding rectangle (x,y) is the top left corner
             xR = float(x + w)
-                
+            centroid_x = x + w // 2
+            centroid_y = y + h // 2
             if w >= 1 and h >= 1:
-                coord = [float(x + w // 2), float(y + h // 2), float(width//2), float(height//2)] #centroid x, centroid y, image center x, image center y
+                coord = [float(centroid_x), float(centroid_y), float(width//2), float(height//2)] #centroid x, centroid y, image center x, image center y
             else:
-                coord = [float(width//2), float(height//2), float(width//2), float(height//2)]
+                coord = [float(width//2), float(height//2), float(width//2), float(height//2)] # if bounding box returns 0s, set centroid to image center so there is no error
                 
         # Convert x_object pixel value to degrees
-        xL_angle =  float(xL * (62.2 / width))
+        xL_angle =  float(xL * (62.2 / width)) # 62.2 degrees is the horizontal field of view of the camera
         xR_angle = float(xR * (62.2 / width))
         
         coord.extend([xL_angle, xR_angle])

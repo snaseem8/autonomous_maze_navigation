@@ -18,7 +18,8 @@ class MinimalSubscriber(Node):
 
         # Declare some variables
         self.centroid = None
-        self.robo_cmd_vel = None
+        self.angular_cmd_vel = None
+        self.linear_cmd_velocity = None
         self.timer = self.create_timer(0.1, self.timer_callback) # 0.1 second timer
         
         # Set up QoS Profiles for passing data over WiFi
@@ -35,10 +36,10 @@ class MinimalSubscriber(Node):
             image_qos_profile)
         self.centroid_subscriber  # Prevents unused variable warning.
         
-        # Declare that the centroid_subscriber node is subscribing to the /coordinates topic.
+        # Declare that the centroid_subscriber node is subscribing to the /object_distance topic.
         self.centroid_subscriber = self.create_subscription(
             Float32,
-            '/distance_error',
+            '/object_distance',
             self.linear_vel_callback,
             image_qos_profile)
         self.centroid_subscriber  # Prevents unused variable warning.
@@ -66,13 +67,17 @@ class MinimalSubscriber(Node):
         else:
             self.angular_cmd_vel = 0.0
             
-    def linear_vel_callback(self, linear_velocity):
+    def linear_vel_callback(self, obj_dist):
         # add P controller for calculating linear_cmd_velocity
+        obj_dist = obj_dist.data
+        if obj_dist is not None:
+            dist_error = obj_dist - 1.524  # desired distance from the object (meters) [5 ft]
+            self.linear_cmd_velocity = (-0.005) * dist_error  # P controller
 
     def timer_callback(self):
-        if self.angular_cmd_vel is not None:
+        if self.angular_cmd_vel & self.linear_cmd_velocity is not None:
             twist_msg = Twist()
-            twist_msg.linear.x = # linear_cmd_velocity
+            twist_msg.linear.x = self.linear_cmd_velocity
             twist_msg.linear.y = 0.0
             twist_msg.linear.z = 0.0
             twist_msg.angular.x = 0.0

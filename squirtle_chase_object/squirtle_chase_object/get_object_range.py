@@ -2,7 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import LaserScan 
+from sensor_msgs.msg._laser_scan import LaserScan  # noqa: F401
 from std_msgs.msg._float32_multi_array import Float32MultiArray  # noqa: F401
 from std_msgs.msg._float32 import Float32  # noqa: F401
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
@@ -37,28 +37,45 @@ class MinimalVideoSubscriber(Node):
             image_qos_profile)
         
         # Declare that the minimal_video_subscriber node is publishing to the /distance_error topic.
-        self._dist_error_publisher = self.create_publisher(
+        self._dist_publisher = self.create_publisher(
             Float32,
-            '/distance_error',
+            '/object_distance',
             10)
         
         self.bridge = CvBridge()
         self._coordinates = None
+        self.object_dist = None
         self.timer = self.create_timer(0.1, self.timer_callback)  # Timer to publish coordinates periodically
     
+    def _coord_callback(self, coord_msg):
+        self._coordinates = coord_msg.data  # pull in the coordinates from the /coordinates topic
+
     def _laser_callback(self, lidar_msg):
         # get lidar_data and compute weighted average of distance based on xL_angle and xR_angle from self.coord
-    
-    def _coord_callback(self, coord_msg):
-        self.coord = coord_msg.data
+        desired_dist = 1.524  # desired distance from the object (meters) [5 ft]
+
+        ranges = np.array(lidar_msg.ranges)   # distance data from the lidar scan [m], with it indexed. Corresponds to an angle value
+        ranges[(ranges < 0.1) | (ranges > 10)] = desired_dist  # mask to filter out the invalid data (like inf and NaN) also cap the max reliable distance to 10m
+        # instead of changing invalid data to 0 or deleting them, we simply set them to the desired distance so that the robot wont move (no error)
         
+
+        min_angle = lidar_msg.angle_min   # start angle of the lidar scan [rad]
+        max_angle = lidar_msg.angle_max   # end angle of the lidar scan [rad]
+        angle_increment = lidar_msg.angle_increment   # angular distance between measurements [rad]
+        xL_angle = np.deg2rad(self._coordinates[4])  # left-most angle of the bounding box in the camera view [rad]
+        xR_angle = np.deg2rad(self._coordinates[5]) # right-most angle of the bounding box in the camera view [rad]
+        left_index = int(np.ceil((xL_angle - min_angle)/angle_increment))  # calculates the index of the left angle, rounds up to integer - this is to be safe
+        right_index = int(np.floor((xR_angle - min_angle)/angle_increment))   # calculates the index of the right angle, rounds down to integer
+        avg_dist = np.mean(ranges[left_index:right_index])  # calculates the average of the distances between the left and right angles
+        self.object_dist = avg_dist
+
     
     def timer_callback(self):
-        if self._coordinates is not None:
-            coord_msg = 
-            coord_msg.data = 
-            self._coordinate_publisher.publish()
-            self.get_logger().info()
+        if self._coordinates & self.object_dist is not None:
+            object_dist = Float32()
+            object_dist.data = self.object_dist
+            self._dist_publisher.publish(object_dist)
+            self.get_logger().info('Publishing object distance (depth): %.2f)' % (object_dist.data))
 
 def main():
     rclpy.init()  # Init routine needed for ROS2.
