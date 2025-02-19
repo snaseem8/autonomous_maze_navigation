@@ -61,7 +61,7 @@ class MinimalSubscriber(Node):
             error = centroid[0] - center_camera_x
             if abs(error) > 30:
                 # calculate input to rotate the robot
-                self.angular_cmd_vel = (-0.0075) * error
+                self.angular_cmd_vel = (-0.01) * error
             else:
                 self.angular_cmd_vel = 0.0
         else:
@@ -76,9 +76,12 @@ class MinimalSubscriber(Node):
         if obj_dist is not None:
             desired_distance = 0.6
             dist_error = obj_dist - desired_distance  # desired distance from the object (meters)
-            self.linear_cmd_velocity = (-0.005) * dist_error  # P controller
-            if self.linear_cmd_velocity > 0.18:
-                self.linear_cmd_velocity = 0.18
+            linear_gain = 0.3
+            self.linear_cmd_velocity = (linear_gain) * dist_error  # P controller
+            if self.linear_cmd_velocity > 0.15:
+                self.linear_cmd_velocity = 0.15
+            elif self.linear_cmd_velocity < -0.15:
+                self.linear_cmd_velocity = -0.15
         else:
             self.linear_cmd_velocity = 0.0
             

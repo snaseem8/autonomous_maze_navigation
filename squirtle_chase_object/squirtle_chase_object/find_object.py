@@ -60,6 +60,7 @@ class MinimalVideoSubscriber(Node):
             x, y, w, h = cv2.boundingRect(contour)
             xL = width//2 - float(x)    # refer to Shahmeel Lab3 ROS Diagram notes
             xR = width//2 - float(x + w)    # refer to Shahmeel Lab3 ROS Diagram notes
+            
             centroid_x = x + w // 2
             centroid_y = y + h // 2
             if w >= 1 and h >= 1:
