@@ -63,10 +63,21 @@ class MinimalVideoSubscriber(Node):
             xL_angle = np.deg2rad(self._coordinates[4])  # left-most angle of the bounding box in the camera view [rad]
             xR_angle = np.deg2rad(self._coordinates[5]) # right-most angle of the bounding box in the camera view [rad]
             
+            xC_angle = np.deg2rad(self._coordinates[6])
             min_angle = lidar_msg.angle_min   # start angle of the lidar scan [rad]
             max_angle = lidar_msg.angle_max   # end angle of the lidar scan [rad]
             angle_increment = lidar_msg.angle_increment   # angular distance between measurements [rad]
-            if (xL_angle == 0) and (xR_angle == 0): 
+            
+            if xC_angle == 0:
+                self.object_dist = desired_dist
+            else:
+                xC_index = int(np.ceil((xC_angle - min_angle)/angle_increment))
+                indices = [(xC_index + i - 5) % len(ranges) for i in range(11)]  # Covers -5 to +5
+                slice_values = ranges[indices]
+                avg_dist = np.mean(slice_values)
+                self.object_dist = avg_dist
+            
+            """ if (xL_angle == 0) and (xR_angle == 0): 
                 self.object_dist = desired_dist
             else:           
                 left_index = int(np.ceil((xL_angle - min_angle)/angle_increment))  # calculates the index of the left angle, rounds up to integer - this is to be safe
@@ -77,13 +88,17 @@ class MinimalVideoSubscriber(Node):
                     ranges = np.roll(ranges, -right_index)
                     index = abs(left_index) + abs(right_index)
                     avg_dist = np.mean(ranges[0:index])  # calculates the average of the distances between the left and right angles
-                    self.object_dist = avg_dist if ranges.size > 0 else desired_dist
-                elif (right_index >= 0) and (left_index >= 0):
-                    avg_dist = np.mean(ranges[left_index:right_index])  # calculates the average of the distances between the left and right angles
-                    self.object_dist = avg_dist if ranges.size > 0 else desired_dist
-                elif (right_index < 0) and (left_index < 0):
+                    self.object_dist = avg_dist
+                elif (right_index == 0) and (left_index > 0):
                     avg_dist = np.mean(ranges[left_index:right_index:-1])  # calculates the average of the distances between the left and right angles
-                    self.object_dist = avg_dist if ranges.size > 0 else desired_dist               
+                    self.object_dist = avg_dist
+                elif (right_index > 0) and (left_index == 0):
+                    avg_dist = np.mean(ranges[left_index:right_index])  # calculates the average of the distances between the left and right angles
+                    self.object_dist = avg_dist
+                elif ((right_index < 0) and (left_index < 0)) or ((right_index > 0) and (left_index > 0)):
+                    avg_dist = np.mean(ranges[left_index:right_index:-1])  # calculates the average of the distances between the left and right angles
+                    self.object_dist = avg_dist     
+                    """                    
         else:
             self.object_dist = desired_dist
     
