@@ -52,7 +52,7 @@ class MinimalVideoSubscriber(Node):
 
     def _laser_callback(self, lidar_msg):
         # get lidar_data and compute weighted average of distance based on xL_angle and xR_angle from self.coord
-        desired_dist = 0.6  # desired distance from the object (meters)
+        desired_dist = 0.5  # desired distance from the object (meters)
 
         ranges = np.array(lidar_msg.ranges)   # distance data from the lidar scan [m], with it indexed. Corresponds to an angle value
         ranges[np.isnan(ranges) | np.isinf(ranges)] = desired_dist  # mask to filter out the invalid data (like inf and NaN) 
@@ -72,7 +72,7 @@ class MinimalVideoSubscriber(Node):
                 self.object_dist = desired_dist
             else:
                 xC_index = int(np.ceil((xC_angle - min_angle)/angle_increment))
-                indices = [(xC_index + i - 5) % len(ranges) for i in range(11)]  # Covers -5 to +5
+                indices = (np.arange(-5, 6) + xC_index) % len(ranges)   # Covers -5 to +5
                 slice_values = ranges[indices]
                 avg_dist = np.mean(slice_values)
                 self.object_dist = avg_dist

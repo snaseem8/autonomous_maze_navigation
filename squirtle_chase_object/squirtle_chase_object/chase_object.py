@@ -22,7 +22,8 @@ class MinimalSubscriber(Node):
         self.angular_cmd_vel = None
         self.linear_cmd_velocity = None
         self.linear_error = 0.0
-        self.desired_distance = 0.6
+        self.desired_distance = 0.5  # desired distance from the object (meters)
+        self.obj_dist = 0
         self.timer = self.create_timer(0.1, self.timer_callback) # 0.1 second timer
         
         # Set up QoS Profiles for passing data over WiFi
@@ -62,8 +63,8 @@ class MinimalSubscriber(Node):
             center_camera_x = centroid[2]
             center_camera_y = centroid[3]
             error = centroid[0] - center_camera_x
-            if (self.linear_error < self.desired_distance) and (self.linear_error != 0):
-                if  (abs(error) > np.floor(50 / self.linear_error)):      # Increase the deadband proportionally to linear error if less than desired distance, (for ex, if linear error is 0.5, deadband will be 60)
+            if (self.linear_error < 0):
+                if  (abs(error) > np.floor(25 / self.obj_dist)):    # Increase the deadband proportionally to linear error if less than desired distance, (for ex, if linear error is 0.5, deadband will be 60)
                     # calculate input to rotate the robot
                     self.angular_cmd_vel = (-0.005) * error
                 else:
@@ -77,21 +78,22 @@ class MinimalSubscriber(Node):
         else:
             self.angular_cmd_vel = 0.0
 
-        if self.angular_cmd_vel > 2.5:
-            self.angular_cmd_vel = 2.5
-        elif self.angular_cmd_vel < -2.5:
-            self.angular_cmd_vel = -2.5
+        if self.angular_cmd_vel > 2:
+            self.angular_cmd_vel = 2
+        elif self.angular_cmd_vel < -2:
+            self.angular_cmd_vel = -2
             
     def linear_vel_callback(self, obj_dist):
         # add P controller for calculating linear_cmd_velocity
         obj_dist = obj_dist.data
+        self.obj_dist = obj_dist
         if obj_dist is not None:
             dist_error = obj_dist - self.desired_distance  # desired distance from the object (meters)
             self.linear_error = dist_error
             if dist_error > 0:
-                linear_gain = 0.2
+                linear_gain = 0.1
             else:
-                linear_gain = 0.4
+                linear_gain = 0.3
             self.linear_cmd_velocity = (linear_gain) * dist_error  # P controller
             if self.linear_cmd_velocity > 0.15:
                 self.linear_cmd_velocity = 0.15
@@ -116,7 +118,6 @@ class MinimalSubscriber(Node):
             
 
 def main():
-    time.sleep(3)
     rclpy.init()  # Init routine needed for ROS2.
     video_subscriber = MinimalSubscriber()  # Create class object to be used.
     

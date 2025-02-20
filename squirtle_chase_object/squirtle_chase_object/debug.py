@@ -25,11 +25,11 @@ class MinimalVideoSubscriber(Node):
         if self._display_image:
             cv2.namedWindow(self._titleOriginal, cv2.WINDOW_AUTOSIZE)
             cv2.moveWindow(self._titleOriginal, 50, 50)
-            cv2.setMouseCallback(self._titleOriginal, self._click_event)  # Set mouse click event
+        #     cv2.setMouseCallback(self._titleOriginal, self._click_event)  # Set mouse click event
 
         # Default HSV range (placeholder, updated on click)
-        self.lower_hsv = np.array([90, 50, 50])
-        self.upper_hsv = np.array([130, 255, 255])
+        self.lower_hsv = np.array([0,142, 113])
+        self.upper_hsv = np.array([12, 222, 193])
 
         # QoS for image streaming over WiFi
         image_qos_profile = QoSProfile(depth=5)
@@ -47,18 +47,18 @@ class MinimalVideoSubscriber(Node):
 
         self.frame = None  # Store the latest frame
 
-    def _click_event(self, event, x, y, flags, param):
-        """ Callback function to get HSV value from a clicked pixel. """
-        if event == cv2.EVENT_LBUTTONDOWN and self.frame is not None:
-            hsv_frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2HSV)
-            clicked_hsv = hsv_frame[y, x]  # Get HSV value at click
-            h, s, v = clicked_hsv
+    # def _click_event(self, event, x, y, flags, param):
+    #     """ Callback function to get HSV value from a clicked pixel. """
+    #     if event == cv2.EVENT_LBUTTONDOWN and self.frame is not None:
+    #         hsv_frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2HSV)
+    #         clicked_hsv = hsv_frame[y, x]  # Get HSV value at click
+    #         h, s, v = clicked_hsv
 
-            # Define a small range around the clicked HSV value
-            self.lower_hsv = np.array([max(0, h - 10), max(0, s - 40), max(0, v - 40)])
-            self.upper_hsv = np.array([min(179, h + 10), min(255, s + 40), min(255, v + 40)])
+    #         # Define a small range around the clicked HSV value
+    #         self.lower_hsv = np.array([max(0, h - 10), max(0, s - 40), max(0, v - 40)])
+    #         self.upper_hsv = np.array([min(179, h + 10), min(255, s + 40), min(255, v + 40)])
 
-            print(f"Updated HSV Range: Lower {self.lower_hsv}, Upper {self.upper_hsv}")
+    #         print(f"Updated HSV Range: Lower {self.lower_hsv}, Upper {self.upper_hsv}")
 
     def _image_callback(self, CompressedImage):
         """ Callback function to process incoming images. """

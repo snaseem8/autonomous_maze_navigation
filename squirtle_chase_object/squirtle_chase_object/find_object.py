@@ -56,7 +56,10 @@ class MinimalVideoSubscriber(Node):
         coord = None  # Default value in case no contours are found
         xL = None
         xR = None
+        min_contour_area = 1000  # Minimum area for a contour to be considered
         for contour in contours:
+            if cv2.contourArea(contour) < min_contour_area:
+                continue
             x, y, w, h = cv2.boundingRect(contour)
             xL = width//2 - float(x)    # refer to Shahmeel Lab3 ROS Diagram notes
             xR = width//2 - float(x + w)    # refer to Shahmeel Lab3 ROS Diagram notes
