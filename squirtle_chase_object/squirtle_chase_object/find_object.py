@@ -56,25 +56,25 @@ class MinimalVideoSubscriber(Node):
         coord = None  # Default value in case no contours are found
         xL = None
         xR = None
-        min_contour_area = 1000  # Minimum area for a contour to be considered
-        for contour in contours:
-            if cv2.contourArea(contour) < min_contour_area:
-                continue
-            x, y, w, h = cv2.boundingRect(contour)
-            xL = width//2 - float(x)    # refer to Shahmeel Lab3 ROS Diagram notes
-            xR = width//2 - float(x + w)    # refer to Shahmeel Lab3 ROS Diagram notes
+        min_contour_area = 5000  # Minimum area for a contour to be considered
+        if contours:
+            largest_contour = max(contours, key=cv2.contourArea)  # Find the biggest contour
             
-            centroid_x = x + w // 2
-            centroid_y = y + h // 2
-            xC = float(width//2 - centroid_x)
-            if w >= 1 and h >= 1:
-                # Convert x_object pixel value to degrees
-                xL_angle =  float(xL * (62.2 / width)) # 62.2 degrees is the horizontal field of view of the camera
-                xR_angle = float(xR * (62.2 / width))
-                xC_angle = float(xC * (62.2 / width))
-                coord = [float(centroid_x), float(centroid_y), float(width//2), float(height//2), float(xL_angle), float(xR_angle), float(xC_angle)] #centroid x, centroid y, image center x, image center y
-            else:
-                coord = [float(width//2), float(height//2), float(width//2), float(height//2), 0.0, 0.0, 0.0] # if bounding box returns 0s, set centroid to image center so there is no error
+            if cv2.contourArea(largest_contour) >= min_contour_area:  # Check if it's big enough
+                x, y, w, h = cv2.boundingRect(largest_contour)
+                xL = width // 2 - float(x)
+                xR = width // 2 - float(x + w)
+                centroid_x = x + w // 2
+                centroid_y = y + h // 2
+                xC = float(width//2 - centroid_x)
+                if w >= 1 and h >= 1:
+                    # Convert x_object pixel value to degrees
+                    xL_angle =  float(xL * (62.2 / width)) # 62.2 degrees is the horizontal field of view of the camera
+                    xR_angle = float(xR * (62.2 / width))
+                    xC_angle = float(xC * (62.2 / width))
+                    coord = [float(centroid_x), float(centroid_y), float(width//2), float(height//2), float(xL_angle), float(xR_angle), float(xC_angle)] #centroid x, centroid y, image center x, image center y
+                else:
+                    coord = [float(width//2), float(height//2), float(width//2), float(height//2), 0.0, 0.0, 0.0] # if bounding box returns 0s, set centroid to image center so there is no error
             
         self._coordinates = coord  # Store detected coordinates
     

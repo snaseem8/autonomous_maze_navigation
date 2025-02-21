@@ -66,13 +66,13 @@ class MinimalSubscriber(Node):
             if (self.linear_error < 0):
                 if  (abs(error) > np.floor(25 / self.obj_dist)):    # Increase the deadband proportionally to linear error if less than desired distance, (for ex, if linear error is 0.5, deadband will be 60)
                     # calculate input to rotate the robot
-                    self.angular_cmd_vel = (-0.005) * error
+                    self.angular_cmd_vel = (-0.0075) * error
                 else:
                     self.angular_cmd_vel = 0.0
             else:
                 if abs(error) > 30:      # Increase the deadband to 100 times the linear error if negative
                     # calculate input to rotate the robot
-                    self.angular_cmd_vel = (-0.005) * error
+                    self.angular_cmd_vel = (-0.0075) * error
                 else:
                     self.angular_cmd_vel = 0.0
         else:
@@ -91,9 +91,9 @@ class MinimalSubscriber(Node):
             dist_error = obj_dist - self.desired_distance  # desired distance from the object (meters)
             self.linear_error = dist_error
             if dist_error > 0:
-                linear_gain = 0.1
+                linear_gain = 0.15
             else:
-                linear_gain = 0.3
+                linear_gain = 0.35
             self.linear_cmd_velocity = (linear_gain) * dist_error  # P controller
             if self.linear_cmd_velocity > 0.15:
                 self.linear_cmd_velocity = 0.15
