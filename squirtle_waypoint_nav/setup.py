@@ -19,7 +19,6 @@ setup(
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': ['publish_waypoints=squirtle_waypoint_nav.publish_waypoints:main'
-        ],
+        'console_scripts': ['publish_waypoints=squirtle_waypoint_nav.publish_waypoints:main'],
     },
 )
