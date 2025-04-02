@@ -1,0 +1,9 @@
+Metadata-Version: 2.1
+Name: squirtle-waypoint-nav
+Version: 0.0.0
+Summary: Lab5 Waypoint Publisher
+Maintainer: snaseem8
+Maintainer-email: snaseem8@gatech.edu
+License: Apache-2.0
+License-File: LICENSE
+Requires-Dist: setuptools
