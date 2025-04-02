@@ -35,7 +35,11 @@ class WaypointPublisher(Node):
         self.goal_idx = 0
         self.threshold = 0.5
 
-        self.goal_points = np.array([[1.60, 0.77], 
+        # self.goal_points = np.array([[1.60, 0.77],      # for real robot
+        #                              [2.54, 1.186], 
+        #                              [0.0, 0.0]])
+        
+        self.goal_points = np.array([[1.60, 0.77],      # for sim
                                      [2.54, 1.186], 
                                      [0.0, 0.0]])
         
