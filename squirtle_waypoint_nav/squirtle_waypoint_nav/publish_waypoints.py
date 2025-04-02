@@ -39,9 +39,9 @@ class WaypointPublisher(Node):
         #                              [2.54, 1.186], 
         #                              [0.0, 0.0]])
         
-        self.goal_points = np.array([[1.60, 0.77],      # for sim
-                                     [2.54, 1.186], 
-                                     [0.0, 0.0]])
+        self.goal_points = np.array([[1.52, 1.76],        # for sim
+                                     [2.72, -.035], 
+                                     [4.46, 1.76]])
         
     def calc_waypoint(self, currentPoseMsg):
         # Extract x, y
