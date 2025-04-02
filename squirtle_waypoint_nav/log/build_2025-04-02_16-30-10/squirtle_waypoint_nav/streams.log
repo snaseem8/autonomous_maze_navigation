@@ -1,0 +1,25 @@
+[1.491s] Invoking command in '/home/snaseem8/ros2_ws/src/squirtle_waypoint_nav': PYTHONPATH=/home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/squirtle_waypoint_nav build --build-base /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/build install --record /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/install.log --single-version-externally-managed install_data
+[1.882s] running egg_info
+[1.908s] writing build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/PKG-INFO
+[1.908s] writing dependency_links to build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/dependency_links.txt
+[1.910s] writing entry points to build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/entry_points.txt
+[1.911s] writing requirements to build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/requires.txt
+[1.911s] writing top-level names to build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/top_level.txt
+[1.958s] reading manifest file 'build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/SOURCES.txt'
+[1.958s] adding license file 'LICENSE'
+[1.958s] writing manifest file 'build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/SOURCES.txt'
+[1.958s] running build
+[1.960s] running build_py
+[1.960s] copying squirtle_waypoint_nav/publish_waypoints.py -> /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/build/lib/squirtle_waypoint_nav
+[1.960s] running install
+[1.966s] running install_lib
+[1.985s] copying /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/build/lib/squirtle_waypoint_nav/publish_waypoints.py -> /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/python3.10/site-packages/squirtle_waypoint_nav
+[1.989s] byte-compiling /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/python3.10/site-packages/squirtle_waypoint_nav/publish_waypoints.py to publish_waypoints.cpython-310.pyc
+[1.991s] running install_data
+[1.992s] running install_egg_info
+[2.013s] removing '/home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/python3.10/site-packages/squirtle_waypoint_nav-0.0.0-py3.10.egg-info' (and everything under it)
+[2.014s] Copying build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info to /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/python3.10/site-packages/squirtle_waypoint_nav-0.0.0-py3.10.egg-info
+[2.016s] running install_scripts
+[2.263s] Installing publish_waypoints script to /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/squirtle_waypoint_nav
+[2.265s] writing list of installed files to '/home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/install.log'
+[2.308s] Invoked command in '/home/snaseem8/ros2_ws/src/squirtle_waypoint_nav' returned '0': PYTHONPATH=/home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/squirtle_waypoint_nav build --build-base /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/build install --record /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/install.log --single-version-externally-managed install_data
