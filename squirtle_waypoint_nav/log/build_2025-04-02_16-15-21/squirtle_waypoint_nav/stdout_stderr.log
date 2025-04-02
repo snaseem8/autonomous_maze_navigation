@@ -1,0 +1,36 @@
+running egg_info
+creating build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info
+writing build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/PKG-INFO
+writing dependency_links to build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/dependency_links.txt
+writing entry points to build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/entry_points.txt
+writing requirements to build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/requires.txt
+writing top-level names to build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/top_level.txt
+writing manifest file 'build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/SOURCES.txt'
+reading manifest file 'build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/SOURCES.txt'
+adding license file 'LICENSE'
+writing manifest file 'build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/build
+creating /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/build/lib
+creating /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/build/lib/squirtle_waypoint_nav
+copying squirtle_waypoint_nav/publish_waypoints.py -> /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/build/lib/squirtle_waypoint_nav
+copying squirtle_waypoint_nav/__init__.py -> /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/build/lib/squirtle_waypoint_nav
+running install
+running install_lib
+creating /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/python3.10/site-packages/squirtle_waypoint_nav
+copying /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/build/lib/squirtle_waypoint_nav/publish_waypoints.py -> /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/python3.10/site-packages/squirtle_waypoint_nav
+copying /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/build/lib/squirtle_waypoint_nav/__init__.py -> /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/python3.10/site-packages/squirtle_waypoint_nav
+byte-compiling /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/python3.10/site-packages/squirtle_waypoint_nav/publish_waypoints.py to publish_waypoints.cpython-310.pyc
+byte-compiling /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/python3.10/site-packages/squirtle_waypoint_nav/__init__.py to __init__.cpython-310.pyc
+running install_data
+creating /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/share/ament_index
+creating /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/share/ament_index/resource_index
+creating /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/share/ament_index/resource_index/packages
+copying resource/squirtle_waypoint_nav -> /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/share/ament_index/resource_index/packages
+copying package.xml -> /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/share/squirtle_waypoint_nav
+running install_egg_info
+Copying build/squirtle_waypoint_nav/squirtle_waypoint_nav.egg-info to /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/python3.10/site-packages/squirtle_waypoint_nav-0.0.0-py3.10.egg-info
+running install_scripts
+Installing publish_waypoints script to /home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/install/squirtle_waypoint_nav/lib/squirtle_waypoint_nav
+writing list of installed files to '/home/snaseem8/ros2_ws/src/squirtle_waypoint_nav/build/squirtle_waypoint_nav/install.log'

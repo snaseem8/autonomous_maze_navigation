@@ -1,0 +1,3 @@
+[0.000000] (-) TimerEvent: {}
+[0.002899] (-) JobUnselected: {'identifier': 'squirtle_waypoint_nav'}
+[0.002975] (-) EventReactorShutdown: {}
