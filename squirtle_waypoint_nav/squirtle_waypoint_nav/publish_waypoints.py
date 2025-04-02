@@ -6,7 +6,7 @@ from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoS
 from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action._navigate_to_pose import NavigateToPose_FeedbackMessage
 
-class waypointPublisher(Node):
+class WaypointPublisher(Node):
 
     def __init__(self):
         # create Node
@@ -35,6 +35,7 @@ class waypointPublisher(Node):
     def calc_waypoint(self, currentPoseMsg):
         currentPose = currentPoseMsg.data
         self.get_logger().info(f'Current Pose: {currentPose}')
+        print (currentPose)
         
         
         # self.x_goal = 
@@ -42,21 +43,22 @@ class waypointPublisher(Node):
 
     def timer_callback(self):
         pose_msg = PoseStamped()
+        print("testing")
         
         # Fill in the header
-        pose_msg.header.stamp = time.time()  # Current time
-        pose_msg.header.frame_id = "map"          # Reference frame (our map name)
+        # pose_msg.header.stamp = time.time()  # Current time
+        # pose_msg.header.frame_id = "map"          # Reference frame (our map name)
 
         # Position (x, y, z)
-        pose_msg.pose.position.x = self.x_goal
-        pose_msg.pose.position.y = self.y_goal
-        pose_msg.pose.position.z = 0.0
+        # pose_msg.pose.position.x = self.x_goal
+        # pose_msg.pose.position.y = self.y_goal
+        # pose_msg.pose.position.z = 0.0
 
-        # Orientation (quaternion: x, y, z, w)
-        pose_msg.pose.orientation.x = 0.0
-        pose_msg.pose.orientation.y = 0.0
-        pose_msg.pose.orientation.z = 0.0
-        pose_msg.pose.orientation.w = 1.0  # Identity quaternion (no rotation)
+        # # Orientation (quaternion: x, y, z, w)
+        # pose_msg.pose.orientation.x = 0.0
+        # pose_msg.pose.orientation.y = 0.0
+        # pose_msg.pose.orientation.z = 0.0
+        # pose_msg.pose.orientation.w = 1.0  # Identity quaternion (no rotation)
         
         # self.publisher_.publish(pose_msg)
         # self.get_logger().info('Publishing: "%s"' % pose_msg.data)
@@ -65,7 +67,7 @@ class waypointPublisher(Node):
 def main(args=None):
     rclpy.init(args=args)
 
-    waypoint_publisher = waypointPublisher()
+    waypoint_publisher = WaypointPublisher()
 
     rclpy.spin(waypoint_publisher)
 
