@@ -1,10 +1,10 @@
 import time
 import rclpy
 from rclpy.node import Node
+import numpy as np
 
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
-from geometry_msgs.msg import PoseStamped
-from nav2_msgs.action._navigate_to_pose import NavigateToPose_FeedbackMessage
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 
 class waypointPublisher(Node):
 
@@ -19,8 +19,8 @@ class waypointPublisher(Node):
         image_qos_profile.reliability = QoSReliabilityPolicy.BEST_EFFORT 
         
         # create subscriber to /navigate_to_pose/_action/feedback topic
-        self.subscription = self.create_subscription(NavigateToPose_FeedbackMessage, 
-                                                     '/navigate_to_pose/_action/feedback', 
+        self.subscription = self.create_subscription(PoseWithCovarianceStamped, 
+                                                     '/amcl_pose', 
                                                      self.calc_waypoint, 
                                                      image_qos_profile)
         self.subscription
@@ -32,24 +32,39 @@ class waypointPublisher(Node):
         timer_period = 0.1
         self.timer = self.create_timer(timer_period, self.timer_callback)
         
+        self.goal_idx = 0
+        self.threshold = 0.5
+        self.goal_points = np.array([[1.52, 1.76], 
+                                     [2.72, -.035], 
+                                     [4.46, 1.76]])
+        
     def calc_waypoint(self, currentPoseMsg):
-        currentPose = currentPoseMsg.data
-        self.get_logger().info(f'Current Pose: {currentPose}')
+        # Extract x, y
+        x_current = currentPoseMsg.pose.pose.position.x
+        y_current = currentPoseMsg.pose.pose.position.y
         
-        
-        # self.x_goal = 
-        # self.y_goal = 
+        if self.goal_idx < len(self.goal_points)-1:
+            goal_x = self.goal_points[self.goal_idx, 0]
+            goal_y = self.goal_points[self.goal_idx, 1]
+            dist_to_goal = np.sqrt((x_current - goal_x) ** 2 + (y_current - goal_y) ** 2)
+            
+            if dist_to_goal < self.threshold:
+                time.sleep(3)
+                self.goal_idx += 1
+                
 
     def timer_callback(self):
         pose_msg = PoseStamped()
         
         # Fill in the header
-        pose_msg.header.stamp = time.time()  # Current time
-        pose_msg.header.frame_id = "map"          # Reference frame (our map name)
+        # Get current ROS time from the node's clock
+        ros_time = self.get_clock().now()  # Returns rclpy.time.Time
+        pose_msg.header.stamp = ros_time.to_msg()
+        pose_msg.header.frame_id = 'map'        # Reference frame (our map name)
 
         # Position (x, y, z)
-        pose_msg.pose.position.x = self.x_goal
-        pose_msg.pose.position.y = self.y_goal
+        pose_msg.pose.position.x = float(self.goal_points[self.goal_idx, 0])
+        pose_msg.pose.position.y = float(self.goal_points[self.goal_idx, 1])
         pose_msg.pose.position.z = 0.0
 
         # Orientation (quaternion: x, y, z, w)
@@ -58,8 +73,8 @@ class waypointPublisher(Node):
         pose_msg.pose.orientation.z = 0.0
         pose_msg.pose.orientation.w = 1.0  # Identity quaternion (no rotation)
         
-        # self.publisher_.publish(pose_msg)
-        # self.get_logger().info('Publishing: "%s"' % pose_msg.data)
+        self.publisher_.publish(pose_msg)
+        self.get_logger().info(f'Publishing: {pose_msg.pose}')
 
 
 def main(args=None):
