@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 import os
 import sys
-import pickle
 import argparse
 import csv
 import cv2
 import numpy as np
+import pickle
 from skimage.feature import hog
+from train import isolate_sign_by_color, find_sign_region, COLOR_RANGES  # Import from train.py
 
 # ------------------------------------------------------------------------------
 #                  DO NOT MODIFY FUNCTION NAMES OR ARGUMENTS
@@ -24,16 +25,20 @@ def initialize_model(model_path=None):
         model: Your trained model.
     """
     if model_path is None:
-        model_path = r"C:\Users\evanr\OneDrive\Documents\GT SPRING 2025 SCHOLAR MODE 6\BME7785 Intro to Robo Research\7785_Spring2025\knn_model_color.pkl"
+        raise ValueError("Model path must be provided to load the pretrained KNN model.")
+
+    # Load the saved model and associated objects
+    with open(model_path, 'rb') as f:
+        saved_data = pickle.load(f)
     
-    try:
-        with open(model_path, 'rb') as f:
-            model_data = pickle.load(f)
-        print(f"Successfully loaded model from {model_path}")
-        return model_data
-    except Exception as e:
-        print(f"Error loading model: {e}")
-        raise
+    # Extract the model, scaler, and target size from the saved data
+    model = {
+        'knn': saved_data['model'],
+        'scaler': saved_data['scaler'],
+        'target_size': saved_data['target_size']
+    }
+
+    return model
 
 def predict(model, image):
     """
@@ -48,56 +53,31 @@ def predict(model, image):
     Returns:
         int: The predicted class label.
     """
-    # Get model components
-    knn = model['model']
+    # Extract components from the model dictionary
+    knn = model['knn']
     scaler = model['scaler']
     IMG_SIZE = model['target_size']
+
+    # Preprocess the image to isolate the sign region (using imported functions)
+    mask, _ = isolate_sign_by_color(image)
+    sign_region = find_sign_region(image, mask)
     
-    # Color ranges in HSV for sign detection
-    COLOR_RANGES = {
-        'red1': ([0, 100, 100], [10, 255, 255]),
-        'red2': ([160, 100, 100], [180, 255, 255]),
-        'blue': ([100, 100, 100], [140, 255, 255]),
-        'green': ([40, 100, 100], [80, 255, 255])
-    }
+    # Use sign region if found, otherwise fall back to full image
+    if sign_region is not None:
+        image_to_process = sign_region
+    else:
+        image_to_process = image
     
-    # Detect sign by color
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    best_mask, best_area = None, 0
+    # Extract features (matching extract_features from train.py)
+    resized = cv2.resize(image_to_process, IMG_SIZE)
     
-    # Try each color range
-    for color, (lower, upper) in COLOR_RANGES.items():
-        if color == 'red2' and best_mask is not None:
-            continue
-            
-        mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
-        kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-        
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if contours:
-            area = max(cv2.contourArea(c) for c in contours)
-            if area > best_area and area > 100:
-                best_mask, best_area = mask, area
+    # Convert to grayscale for HOG
+    if len(resized.shape) == 3:
+        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = resized
     
-    # Extract sign region if detected
-    if best_mask is not None:
-        contours, _ = cv2.findContours(best_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if contours:
-            largest = max(contours, key=cv2.contourArea)
-            x, y, w, h = cv2.boundingRect(largest)
-            margin = 10
-            x, y = max(0, x - margin), max(0, y - margin)
-            w = min(image.shape[1] - x, w + 2*margin)
-            h = min(image.shape[0] - y, h + 2*margin)
-            image = image[y:y+h, x:x+w]
-    
-    # Extract features
-    resized = cv2.resize(image, IMG_SIZE)
-    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
-    
-    # HOG features
+    # Extract HOG features
     hog_features, _ = hog(
         gray, 
         orientations=9, 
@@ -107,25 +87,30 @@ def predict(model, image):
         block_norm='L2-Hys'
     )
     
-    # Color features
-    hsv_img = cv2.cvtColor(resized, cv2.COLOR_BGR2HSV)
-    h_hist = cv2.calcHist([hsv_img[:,:,0]], [0], None, [16], [0, 180])
-    s_hist = cv2.calcHist([hsv_img[:,:,1]], [0], None, [16], [0, 256])
-    v_hist = cv2.calcHist([hsv_img[:,:,2]], [0], None, [16], [0, 256])
+    # Extract color features if image is color
+    if len(image_to_process.shape) == 3:
+        hsv_img = cv2.cvtColor(resized, cv2.COLOR_BGR2HSV)
+        h_hist = cv2.calcHist([hsv_img[:,:,0]], [0], None, [16], [0, 180])
+        s_hist = cv2.calcHist([hsv_img[:,:,1]], [0], None, [16], [0, 256])
+        v_hist = cv2.calcHist([hsv_img[:,:,2]], [0], None, [16], [0, 256])
+        
+        # Normalize and combine features
+        h_hist = cv2.normalize(h_hist, h_hist, 0, 1, cv2.NORM_MINMAX)
+        s_hist = cv2.normalize(s_hist, s_hist, 0, 1, cv2.NORM_MINMAX)
+        v_hist = cv2.normalize(v_hist, v_hist, 0, 1, cv2.NORM_MINMAX)
+        
+        color_features = np.concatenate([h_hist, s_hist, v_hist]).flatten()
+        features = np.concatenate([hog_features, color_features])
+    else:
+        features = hog_features
     
-    # Normalize and combine features
-    h_hist = cv2.normalize(h_hist, h_hist, 0, 1, cv2.NORM_MINMAX)
-    s_hist = cv2.normalize(s_hist, s_hist, 0, 1, cv2.NORM_MINMAX)
-    v_hist = cv2.normalize(v_hist, v_hist, 0, 1, cv2.NORM_MINMAX)
-    
-    color_features = np.concatenate([h_hist, s_hist, v_hist]).flatten()
-    features = np.concatenate([hog_features, color_features])
-    
-    # Scale features and predict
+    # Scale the features using the saved scaler
     features_scaled = scaler.transform(features.reshape(1, -1))
+    
+    # Predict using the KNN model
     prediction = knn.predict(features_scaled)[0]
     
-    return prediction
+    return int(prediction)
 
 # ------------------------------------------------------------------------------
 #                      DO NOT MODIFY ANY CODE BELOW THIS LINE

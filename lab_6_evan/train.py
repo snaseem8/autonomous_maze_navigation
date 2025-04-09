@@ -13,7 +13,7 @@ from skimage.feature import hog
 import random
 
 # Configuration
-BASE_DIR = r"C:\Users\evanr\OneDrive\Documents\GT SPRING 2025 SCHOLAR MODE 6\BME7785 Intro to Robo Research\IntroRobo Lab 6 Image Classification"
+BASE_DIR = "training_data"
 DATA_DIRS = [
     os.path.join(BASE_DIR, "2025S_imgs"),
     os.path.join(BASE_DIR, "2024F_imgs"),
@@ -22,7 +22,7 @@ DATA_DIRS = [
 IMG_SIZE = (64, 64)
 RANDOM_SEED = 123  # Changed seed to avoid data leakage issues
 TEST_SIZE = 0.2
-MODEL_SAVE_PATH = r"C:\Users\evanr\OneDrive\Documents\GT SPRING 2025 SCHOLAR MODE 6\BME7785 Intro to Robo Research\7785_Spring2025\knn_model_color.pkl"
+MODEL_SAVE_PATH = "./knn_model_color.pkl"
 
 # Color ranges in HSV for different sign colors
 COLOR_RANGES = {
@@ -252,9 +252,9 @@ def train_and_evaluate():
         X, y, test_size=TEST_SIZE, random_state=RANDOM_SEED, stratify=y
     )
     
-    # Save test set
-    with open('test_set.pkl', 'wb') as f:
-        pickle.dump({'features': X_test, 'labels': y_test}, f)
+    # # Save test set
+    # with open('test_set.pkl', 'wb') as f:
+    #     pickle.dump({'features': X_test, 'labels': y_test}, f)
     
     # Scale features
     scaler = StandardScaler()
