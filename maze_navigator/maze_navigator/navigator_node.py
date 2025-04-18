@@ -4,7 +4,7 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from std_msgs.msg import Int32, Bool
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Twist
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import Odometry
 import numpy as np
@@ -31,6 +31,7 @@ class NavigatorNode(Node):
         
         # Publishers
         self.goal_pub = self.create_publisher(Bool, '/goal_reached', 10)
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         
         # State machine
         self.state = 'IDLE'
@@ -40,6 +41,10 @@ class NavigatorNode(Node):
         self.recovery_count = 0
         self.max_recovery_attempts = 3
         self.visited_cells = set()  # Track visited cells to avoid loops
+        self.cone_angle = 10 * np.pi / 180  # ±10° cone for front distance
+        self.classification_distance = 0.7  # Start classifying at 0.7m
+        self.min_distance = 0.4  # Stop at 0.4m
+        self.forward_speed = 0.1  # m/s for moving during classification
         
         # Parameters
         self.turn_angles = {
@@ -59,7 +64,7 @@ class NavigatorNode(Node):
             self.process_sign()
             
     def scan_callback(self, msg):
-         # Compute indices for ±10° cone around forward direction (0° relative to robot)
+        # Compute indices for ±10° cone around forward direction (0° relative to robot)
         forward_angle = 0.0
         cone_half_width = self.cone_angle / 2
         angles = np.array([msg.angle_min + i * msg.angle_increment for i in range(len(msg.ranges))])
@@ -73,7 +78,29 @@ class NavigatorNode(Node):
         # Compute average distance
         self.front_distance = np.mean(valid_distances) if valid_distances else 10.0
         
+    def stop_robot(self):
+        # Publish zero velocity to stop the robot
+        twist = Twist()
+        twist.linear.x = 0.0
+        twist.angular.z = 0.0
+        self.cmd_vel_pub.publish(twist)
+        # Cancel any active Nav2 goals
+        if self.nav_client.server_is_ready():
+            self.nav_client.cancel_goal()
+        self.get_logger().info('Robot stopped')
+        
+    def move_forward(self):
+        # Publish forward velocity for classification
+        twist = Twist()
+        twist.linear.x = self.forward_speed
+        twist.angular.z = 0.0
+        self.cmd_vel_pub.publish(twist)
+        self.get_logger().info('Moving forward for classification')
+        
     def process_sign(self):
+        # Stop the robot before processing the sign
+        self.stop_robot()
+        
         if self.current_sign == 0:  # Empty wall
             self.recovery_count += 1
             if self.recovery_count < self.max_recovery_attempts:
@@ -104,6 +131,9 @@ class NavigatorNode(Node):
             self.get_logger().warn('No pose available, cannot send turn goal')
             return
             
+        # Ensure robot is stopped
+        self.stop_robot()
+        
         goal_msg = NavigateToPose.Goal()
         goal_pose = PoseStamped()
         goal_pose.header.frame_id = 'map'
@@ -136,8 +166,7 @@ class NavigatorNode(Node):
             self.get_logger().warn('No pose available, cannot send move goal')
             return
             
-        # Find furthest wall using LIDAR
-        scan_msg = None
+        # Get latest scan
         try:
             scan_msg = self.wait_for_message(LaserScan, '/scan', timeout=1.0)
         except:
@@ -145,28 +174,26 @@ class NavigatorNode(Node):
             self.state = 'IDLE'
             return
             
-        ranges = np.array(scan_msg.ranges)
-        valid_indices = np.where(np.isfinite(ranges))[0]
-        if len(valid_indices) == 0:
-            self.get_logger().warn('No valid ranges, retrying')
-            self.state = 'IDLE'
-            return
-            
-        # Consider a narrow cone ahead (±10 degrees)
-        angle_range = 10 * np.pi / 180
-        center_idx = len(ranges) // 2
-        angle_per_idx = scan_msg.angle_increment
-        num_indices = int(angle_range / angle_per_idx / 2)
-        scan_indices = range(center_idx - num_indices, center_idx + num_indices + 1)
-        valid_scan_indices = [i for i in scan_indices if i in valid_indices]
+        # Compute indices for ±10° cone around forward direction
+        forward_angle = 0.0
+        cone_half_width = self.cone_angle / 2
+        angles = np.array([scan_msg.angle_min + i * scan_msg.angle_increment 
+                          for i in range(len(scan_msg.ranges))])
+        cone_indices = np.where((angles >= forward_angle - cone_half_width) & 
+                               (angles <= forward_angle + cone_half_width))[0]
         
-        if not valid_scan_indices:
+        # Get valid distances in the cone
+        valid_distances = [scan_msg.ranges[i] for i in cone_indices 
+                          if np.isfinite(scan_msg.ranges[i]) and 
+                          scan_msg.range_min <= scan_msg.ranges[i] <= scan_msg.range_max]
+        if not valid_distances:
             self.get_logger().warn('No valid ranges in forward cone, retrying')
             self.state = 'IDLE'
             return
             
-        max_idx = valid_scan_indices[np.argmax([ranges[i] for i in valid_scan_indices])]
-        max_distance = ranges[max_idx]
+        # Find furthest distance and corresponding angle
+        max_distance = max(valid_distances)
+        max_idx = cone_indices[valid_distances.index(max_distance)]
         angle = scan_msg.angle_min + max_idx * scan_msg.angle_increment
         
         # Compute goal position in map frame
@@ -211,16 +238,26 @@ class NavigatorNode(Node):
         
     def run(self):
         if self.state == 'IDLE':
-            if self.front_distance <= 1.0 and self.current_pose is not None:
+            if self.front_distance <= self.classification_distance and self.current_pose is not None:
+                # Start classification and move forward
                 self.state = 'CLASSIFY'
-                # Trigger classification via service or node API (simplified here)
                 try:
                     sign_node = self.get_node('sign_classifier_node')
                     sign_node.start_classification()
                     self.get_logger().info('Transition to CLASSIFY')
+                    self.move_forward()  # Start moving
                 except:
                     self.get_logger().warn('Sign classifier node not found, retrying')
                     
+        elif self.state == 'CLASSIFY':
+            # Continue moving until 0.4m
+            if self.front_distance > self.min_distance:
+                self.move_forward()
+            else:
+                self.stop_robot()  # Stop at 0.4m
+                self.get_logger().info('Reached 0.4m, waiting for classification')
+            # Wait for sign_callback to transition to TURN or GOAL_REACHED
+            
         elif self.state == 'TURN':
             # Simplified: Assume Nav2 goal completion
             self.send_move_goal()
@@ -233,7 +270,8 @@ class NavigatorNode(Node):
             self.get_logger().info('Transition to IDLE')
             
         elif self.state == 'GOAL_REACHED':
-            pass  # Stop
+            self.stop_robot()  # Ensure robot stops at goal
+            pass
             
 def main(args=None):
     rclpy.init(args=args)

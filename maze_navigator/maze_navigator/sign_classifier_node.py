@@ -5,22 +5,30 @@ from sensor_msgs.msg import Image, LaserScan
 from std_msgs.msg import Int32
 from cv_bridge import CvBridge
 import cv2
+import os
 import numpy as np
 from collections import Counter
-
-# IMPORT CLASSIFIER
+from model import initialize_model, predict
 
 class SignClassifierNode(Node):
     def __init__(self):
         super().__init__('sign_classifier_node')
         self.bridge = CvBridge()
-        self.model = # ADD MODEL
         
+        # Load model from scripts directory
+        model_path = os.path.join(os.path.dirname(__file__), 'knn_model_color.pkl')
+        try:
+            self.model = initialize_model(model_path)
+        except Exception as e:
+            self.get_logger().error(f"Failed to initialize model: {str(e)}")
+            raise
+            
         # Parameters
         self.classification_distance = 0.7  # Meters to wall for classification
         self.min_distance = 0.4  # Stop classifying if closer
         self.num_samples = 10  # Number of images to classify
         self.confidence_threshold = 0.6  # Minimum fraction for majority vote
+        self.cone_angle = np.deg2rad(20.0)  # ±10° cone for distance averaging (20° total)
         
         # Subscribers
         self.image_sub = self.create_subscription(
@@ -38,11 +46,14 @@ class SignClassifierNode(Node):
         self.classifications = []
         
     def image_callback(self, msg):
-        self.current_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-        
+        try:
+            self.current_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+        except Exception as e:
+            self.get_logger().error(f"Failed to convert image: {str(e)}")
+            
     def scan_callback(self, msg):
-        # Compute indices for ±10° cone around forward direction (0° relative to robot)
-        forward_angle = 0.0  # Forward direction in robot frame
+        # Compute indices for ±10° cone around forward direction (0°)
+        forward_angle = 0.0
         cone_half_width = self.cone_angle / 2
         angles = np.array([msg.angle_min + i * msg.angle_increment for i in range(len(msg.ranges))])
         cone_indices = np.where((angles >= forward_angle - cone_half_width) & 
@@ -52,10 +63,13 @@ class SignClassifierNode(Node):
         valid_distances = [msg.ranges[i] for i in cone_indices if np.isfinite(msg.ranges[i]) and 
                           msg.range_min <= msg.ranges[i] <= msg.range_max]
         
-        # Compute average distance (or max if preferred)
+        # Compute average distance
         self.front_distance = np.mean(valid_distances) if valid_distances else 10.0
         
-        if self.classifying:
+        # Start classification if not already classifying and in range
+        if not self.classifying:
+            self.start_classification()
+        else:
             self.process_classification()
             
     def start_classification(self):
@@ -74,10 +88,13 @@ class SignClassifierNode(Node):
             self.finish_classification()
             return
             
-        # Classify current image
-        pred = # ADD PREDICTION METHOD OF MODEL
-        self.classifications.append(pred)
-        
+        try:
+            pred = predict(self.model, self.current_image)
+            self.classifications.append(pred)
+            self.get_logger().info(f'Collected classification: {pred}')
+        except Exception as e:
+            self.get_logger().error(f"Classification failed: {str(e)}")
+            
         if len(self.classifications) >= self.num_samples:
             self.finish_classification()
             
@@ -87,7 +104,6 @@ class SignClassifierNode(Node):
             self.get_logger().warn('No classifications collected')
             return
             
-        # Compute majority vote
         counter = Counter(self.classifications)
         most_common, count = counter.most_common(1)[0]
         confidence = count / len(self.classifications)
