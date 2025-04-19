@@ -2,7 +2,7 @@ import pickle
 import cv2
 import numpy as np
 from skimage.feature import hog
-from train import isolate_sign_by_color, find_sign_region, COLOR_RANGES
+from maze_navigator.train import isolate_sign_by_color, find_sign_region, COLOR_RANGES
 
 def initialize_model(model_path):
     # Same as above

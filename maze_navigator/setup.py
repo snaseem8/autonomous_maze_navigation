@@ -10,6 +10,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/maze_navigator/launch', ['launch/maze_navigator_launch.py']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -19,7 +20,9 @@ setup(
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': [
+        'console_scripts': ['sign_classifier_node=maze_navigator.sign_classifier_node:main',
+			'navigator_node=maze_navigator.navigator_node:main',
+            'debug=maze_navigator.debug:main'
         ],
     },
 )
