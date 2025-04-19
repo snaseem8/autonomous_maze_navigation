@@ -3,7 +3,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage, LaserScan
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
-from std_msgs.msg import Int32
+from std_msgs.msg import Int32, Float32
 from cv_bridge import CvBridge
 import cv2
 import os
@@ -49,15 +49,15 @@ class SignClassifierNode(Node):
             raise
             
         # Parameters
-        self.classification_distance = 0.7
+        self.classification_distance = 1.0
         self.min_distance = 0.2  # Stop classifying if closer
         self.cone_angle = np.deg2rad(14.0)  # 14 deg cone for distance averaging
         
         # Subscribers
         self.image_sub = self.create_subscription(
             CompressedImage, '/image_raw/compressed', self.image_callback, image_qos_profile_img)
-        self.scan_sub = self.create_subscription(
-            LaserScan, '/scan', self.scan_callback, image_qos_profile)
+        self.front_dist_sub = self.create_subscription(
+            Float32, '/front_dist', self.front_dist_callback, 10)
         
         # Publisher
         self.class_pub = self.create_publisher(Int32, '/sign_class', 10)
@@ -65,7 +65,6 @@ class SignClassifierNode(Node):
         # State
         self.current_image = None
         self.front_distance = float('inf')
-        self.classified = False
         
     def image_callback(self, CompressedImage):
         try:
@@ -88,7 +87,7 @@ class SignClassifierNode(Node):
             if contours:
                 # Filter contours by area (e.g., min area to avoid noise, adjust#> adjust as needed
                 min_contour_area = 3000
-                valid_contours = [c for c in contours if cv2.contourArea(c) > min_contour_area]
+                valid_contours = None # [c for c in contours if cv2.contourArea(c) > min_contour_area]
                 
                 if valid_contours:
                     # Get the largest valid contour (assumed to be the sign)
@@ -122,37 +121,22 @@ class SignClassifierNode(Node):
             self.get_logger().error(f"Failed to process image: {str(e)}")
             self.current_image = None
             
-    def scan_callback(self, msg):
-        # indices for +/- 7 degree cone around forward direction
-        forward_angle = 0.0
-        cone_half_width = self.cone_angle / 2
-        angles = np.array([msg.angle_min + i * msg.angle_increment for i in range(len(msg.ranges))])
-        cone_indices = np.where((angles >= forward_angle - cone_half_width) & 
-                               (angles <= forward_angle + cone_half_width))[0]
-        
-        # Get valid distances in the cone
-        valid_distances = [msg.ranges[i] for i in cone_indices if np.isfinite(msg.ranges[i]) and 
-                          msg.range_min <= msg.ranges[i] <= msg.range_max]
-        
-        # average distance
-        self.front_distance = np.mean(valid_distances) if valid_distances else 10.0
-        # self.get_logger().info(f'Front distance: {self.front_distance}')
-        # self.get_logger().info(f'Classify Flag: {self.classified}')
+    def front_dist_callback(self, msg):
+        self.front_distance = msg.data
+        # self.get_logger().info(f'Recieving front distance: {self.front_distance}')
         
         # Perform classification if at right distance and haven't classified yet
-        if not self.classified and self.current_image is not None:
+        if self.current_image is not None:
             self.classify_image()
             
     def classify_image(self):
-        
-        if self.front_distance <= self.classification_distance and self.front_distance > self.min_distance:
+        if self.front_distance <= self.classification_distance: # and self.front_distance > self.min_distance:
             try:
                 pred = predict(self.model, self.current_image)
                 msg = Int32()
                 msg.data = pred
                 self.class_pub.publish(msg)
                 self.get_logger().info(f'Published sign class: {pred}')
-                self.classified = True
             except Exception as e:
                 self.get_logger().error(f"Classification failed: {str(e)}")
         else:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Int32
+from std_msgs.msg import Int32, Float32
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
@@ -39,6 +39,7 @@ class NavigatorNode(Node):
         
         # Publisher
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.front_dist_pub = self.create_publisher(Float32, '/front_dist', 10)
         
         # State
         self.front_distance = float('inf')
@@ -80,7 +81,12 @@ class NavigatorNode(Node):
                                 (angles <= forward_angle + cone_half_width))[0]
         valid_distances = [msg.ranges[i] for i in cone_indices if np.isfinite(msg.ranges[i]) and
                            msg.range_min <= msg.ranges[i] <= msg.range_max]
-        self.front_distance = np.mean(valid_distances) if valid_distances else 10.0
+        self.front_distance = np.mean(valid_distances)
+        
+        dist_msg = Float32()
+        dist_msg.data = self.front_distance
+        self.front_dist_pub.publish(dist_msg)
+        # self.get_logger().info(f'publishing front distance: {dist_msg.data}')
         
         # Stop if too close to wall
         if self.front_distance <= self.target_distance and self.state == 'MOVING_FORWARD':
@@ -91,6 +97,10 @@ class NavigatorNode(Node):
             self.get_logger().info('Reached wall, ready for next classification')
         
     def class_callback(self, msg):
+        # self.get_logger().info('I am in class_callback')
+        # self.get_logger().info(f'state: {self.state}')
+        # self.get_logger().info(f'goal_reached: {self.goal_reached}')
+        # self.get_logger().info(f'ignore flag: {self.ignore_classification}')
         if self.goal_reached or self.state != 'IDLE' or self.ignore_classification:
             return
         self.current_class = msg.data
@@ -177,18 +187,18 @@ class NavigatorNode(Node):
     def drive_controller(self):
         if self.front_distance > self.target_distance:
             # Drive forward
-            linear_vel = min(self.kp_linear * (self.front_distance - self.target_distance), self.linear_speed_max)
+            linear_vel = min(self.kp_linear * (self.front_distance - (self.target_distance - 0.1)), self.linear_speed_max)
             cmd = Twist()
             cmd.linear.x = linear_vel
             self.cmd_vel_pub.publish(cmd)
             self.get_logger().info(f'Driving forward, distance to wall: {self.front_distance:.2f}m')
-        else:
-            # Stop (redundant, handled by scan_callback)
-            self.stop_robot()
-            self.state = 'IDLE'
-            self.target_yaw = None
-            self.ignore_classification = False
-            self.get_logger().info('Reached wall, ready for next classification')
+        # else:
+        #     # Stop (redundant, handled by scan_callback)
+        #     self.stop_robot()
+        #     self.state = 'IDLE'
+        #     self.target_yaw = None
+        #     self.ignore_classification = False
+        #     self.get_logger().info('Reached wall, ready for next classification')
         
     def stop_robot(self):
         cmd = Twist()
