@@ -28,6 +28,11 @@ class NavigatorNode(Node):
         self.kp_linear = 0.5  # P gain for linear error
         self.kp_angular = 1.0  # P gain for angular error
         self.angular_tolerance = np.deg2rad(5.0)  # 5 deg
+        self.class_votes = []
+        self.vote_threshold = 2      # require ≥2 votes
+        self.last_class     = None   # for fallback single vote
+        self.initial_class_done = False   # checks if we are starting in idle
+
         
         # Subscribers
         self.class_sub = self.create_subscription(
@@ -82,20 +87,68 @@ class NavigatorNode(Node):
                            msg.range_min <= msg.ranges[i] <= msg.range_max]
         self.front_distance = np.mean(valid_distances) if valid_distances else 10.0
         
-        # Stop if too close to wall
+
+        # One‐time initial classification if we start in IDLE and are at a wall
+        if (not self.initial_class_done
+            and self.state == 'IDLE'
+            and self.front_distance <= self.target_distance):
+            
+            if self.last_class is None:
+                self.get_logger().warn('Initial wall detected but no classifier msg yet.')
+            else:
+                self.get_logger().info(f'Initial classification from last_class → {self.last_class}')
+                self.current_class = self.last_class
+                self.initial_class_done = True
+                # take your normal action
+                self.process_sign()
+            # skip the rest of scan_callback on this cycle
+            return
+
+        # Check if we are close enough to the wall to stop
         if self.front_distance <= self.target_distance and self.state == 'MOVING_FORWARD':
+            # stop and reset state
             self.stop_robot()
             self.state = 'IDLE'
             self.target_yaw = None
             self.ignore_classification = False
-            self.get_logger().info('Reached wall, ready for next classification')
+
+            n_votes = len(self.class_votes)
+            if n_votes >= self.vote_threshold:
+                # use the mode of the votes
+                most_common = max(set(self.class_votes), key=self.class_votes.count)
+                self.get_logger().info(f'Using mode of {n_votes} votes → {most_common}')
+                self.current_class = most_common
+            else:
+                # fallback: ignore votes, use the last raw class
+                self.get_logger().warn(
+                    f'Only {n_votes} vote(s); falling back to most recent class {self.last_class}'
+                )
+                self.current_class = self.last_class
+
+            # clear votes for the next wall
+            self.class_votes.clear()
+
+            # now act on whichever class we chose
+            self.process_sign()
+
+
         
+    # def class_callback(self, msg):
+    #     if self.goal_reached or self.state != 'IDLE' or self.ignore_classification:
+    #         return
+    #     self.current_class = msg.data
+    #     self.get_logger().info(f'Received sign class: {self.current_class}')
+    #     self.process_sign()
+
     def class_callback(self, msg):
-        if self.goal_reached or self.state != 'IDLE' or self.ignore_classification:
-            return
-        self.current_class = msg.data
-        self.get_logger().info(f'Received sign class: {self.current_class}')
-        self.process_sign()
+        # stash the most recent classification no matter what
+        self.last_class = msg.data
+
+        # only collect votes while approaching the wall
+        if self.state == 'MOVING_FORWARD' and 0.4 < self.front_distance <= 1.0:
+            self.class_votes.append(msg.data)
+            self.get_logger().info(f'Collected class vote: {msg.data}')
+
             
     def process_sign(self):
         # self.get_logger().info(f'class: {self.current_class}')
@@ -177,7 +230,7 @@ class NavigatorNode(Node):
     def drive_controller(self):
         if self.front_distance > self.target_distance:
             # Drive forward
-            linear_vel = min(self.kp_linear * (self.front_distance - self.target_distance), self.linear_speed_max)
+            linear_vel = min(self.kp_linear * (self.front_distance - (self.target_distance - 0.1)), self.linear_speed_max)
             cmd = Twist()
             cmd.linear.x = linear_vel
             self.cmd_vel_pub.publish(cmd)

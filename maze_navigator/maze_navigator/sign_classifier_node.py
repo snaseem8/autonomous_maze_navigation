@@ -49,7 +49,7 @@ class SignClassifierNode(Node):
             raise
             
         # Parameters
-        self.classification_distance = 0.7
+        self.classification_distance = 1.0
         self.min_distance = 0.2  # Stop classifying if closer
         self.cone_angle = np.deg2rad(14.0)  # 14 deg cone for distance averaging
         
