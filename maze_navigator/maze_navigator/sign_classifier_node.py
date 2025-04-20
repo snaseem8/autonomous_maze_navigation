@@ -80,7 +80,7 @@ class SignClassifierNode(Node):
             self.lower_hsv = np.array([max(0, h - 10), max(0, s - 40), max(0, v - 40)])
             self.upper_hsv = np.array([min(179, h + 10), min(255, s + 40), min(255, v + 40)])
             
-            self.get_logger().info(f"HSV lower: {self.lower_hsv}.   HSV upper: {self.upper_hsv}.")
+            # self.get_logger().info(f"HSV lower: {self.lower_hsv}.   HSV upper: {self.upper_hsv}.")
         
     def image_callback(self, CompressedImage):
         try:
@@ -103,10 +103,10 @@ class SignClassifierNode(Node):
                 self.coord = [float(width//2), float(height//2), float(width//2), float(height//2)] # if bounding box returns 0s, set centroid to image center so there is no error
             
             mask_area = cv2.countNonZero(mask)
-            self.get_logger().info(f"Mask area: {mask_area}")
+            # self.get_logger().info(f"Mask area: {mask_area}")
             if sign_region is not None and mask_area > 800:
                 self.current_image = sign_region
-                self.get_logger().info(f"using cropped image by color ({color_name})")
+                # self.get_logger().info(f"using cropped image by color ({color_name})")
             else:
                 self.get_logger().warn("Color-based sign detection failed, using full image")
                 self.current_image = self.img

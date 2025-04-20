@@ -22,6 +22,7 @@ setup(
     entry_points={
         'console_scripts': ['sign_classifier_node=maze_navigator.sign_classifier_node:main',
 			'navigator_node=maze_navigator.navigator_node:main',
+            'pose_listener=maze_navigator.pose_listener:main',
             'debug=maze_navigator.debug:main'
         ],
     },

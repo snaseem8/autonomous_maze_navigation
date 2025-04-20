@@ -34,6 +34,7 @@ class NavigatorNode(Node):
         self.last_class     = None   # for fallback single vote
         self.initial_class_done = False   # checks if we are starting in idle
         
+        
 
         
         # Subscribers
@@ -41,12 +42,17 @@ class NavigatorNode(Node):
             Int32, '/sign_class', self.class_callback, 10)
         self.scan_sub = self.create_subscription(
             LaserScan, '/scan', self.scan_callback, image_qos_profile)
-        self.odom_sub = self.create_subscription(
-            Odometry, '/odom', self.odom_callback, 10)
+        # self.odom_sub = self.create_subscription(
+        #     Odometry, '/odom', self.odom_callback, 10)
         self.centroid_subscriber = self.create_subscription(
             Float32MultiArray,
             '/coordinates',
             self.coordinate_callback,
+            image_qos_profile)
+        self.pose_sub = self.create_subscription(
+            Float32MultiArray,
+            '/pose_array',
+            self.pose_callback,
             image_qos_profile)
         
         # Publisher
@@ -69,24 +75,37 @@ class NavigatorNode(Node):
         yaw = math.atan2(siny_cosp, cosy_cosp)
         return yaw
         
-    def odom_callback(self, msg):
-        # Extract pose (x, y, yaw) from /odom
-        x_current = msg.pose.pose.position.x
-        y_current = msg.pose.pose.position.y
-        orientation = msg.pose.pose.orientation
-        quaternion = [orientation.x, orientation.y, orientation.z, orientation.w]
-        yaw = self.quaternion_to_yaw(quaternion)
-        self.current_pose = (x_current, y_current, yaw)
+    # def odom_callback(self, msg):
+    #     # Extract pose (x, y, yaw) from /odom
+    #     x_current = msg.pose.pose.position.x
+    #     y_current = msg.pose.pose.position.y
+    #     orientation = msg.pose.pose.orientation
+    #     quaternion = [orientation.x, orientation.y, orientation.z, orientation.w]
+    #     yaw = self.quaternion_to_yaw(quaternion)
+    #     self.current_pose = (x_current, y_current, yaw)
         
+    #     # Run controllers based on state
+    #     if self.state == 'TURNING' and self.target_yaw is not None:
+    #         self.turn_controller()
+    #     elif self.state == 'MOVING_FORWARD':
+    #         self.drive_controller()
+
+    def pose_callback(self, msg):
+        x, y, yaw = msg.data
+        # store as a tuple
+        self.current_pose = (x, y, yaw)
+        self.get_logger().info(f"Receiving pose: {self.current_pose}") 
+
         # Run controllers based on state
         if self.state == 'TURNING' and self.target_yaw is not None:
             self.turn_controller()
         elif self.state == 'MOVING_FORWARD':
             self.drive_controller()
-            
+
+
     def coordinate_callback(self, msg):
         self.coord = msg.data
-        self.get_logger().error(f"Receiving coordinates: {self.coord}") 
+        # self.get_logger().info(f"Receiving coordinates: {self.coord}") 
         
     def scan_callback(self, msg):
         # Compute front distance (14° cone)
