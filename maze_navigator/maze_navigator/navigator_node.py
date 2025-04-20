@@ -147,17 +147,13 @@ class NavigatorNode(Node):
     #     self.process_sign()
 
     def class_callback(self, msg):
-<<<<<<< HEAD
-        # self.get_logger().info('I am in class_callback')
-        # self.get_logger().info(f'state: {self.state}')
-        # self.get_logger().info(f'goal_reached: {self.goal_reached}')
-        # self.get_logger().info(f'ignore flag: {self.ignore_classification}')
+        
         if self.goal_reached or self.state != 'IDLE' or self.ignore_classification:
             return
         self.current_class = msg.data
         self.get_logger().info(f'Received sign class: {self.current_class}')
         self.process_sign()
-=======
+
         # stash the most recent classification no matter what
         self.last_class = msg.data
 
@@ -166,7 +162,6 @@ class NavigatorNode(Node):
             self.class_votes.append(msg.data)
             self.get_logger().info(f'Collected class vote: {msg.data}')
 
->>>>>>> shahmeel_branch_dev
             
     def process_sign(self):
         # self.get_logger().info(f'class: {self.current_class}')
@@ -248,6 +243,7 @@ class NavigatorNode(Node):
     def drive_controller(self):
         if self.front_distance > self.target_distance:
             # Drive forward
+            linear_vel = min(self.kp_linear * (self.front_distance - (self.target_distance - 0.1)), self.linear_speed_max)
             linear_vel = min(self.kp_linear * (self.front_distance - (self.target_distance - 0.1)), self.linear_speed_max)
             cmd = Twist()
             cmd.linear.x = linear_vel
