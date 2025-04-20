@@ -129,18 +129,29 @@ class SignClassifierNode(Node):
         if self.current_image is not None:
             self.classify_image()
             
+    # def classify_image(self):
+    #     if self.front_distance <= self.classification_distance: # and self.front_distance > self.min_distance:
+    #         try:
+    #             pred = predict(self.model, self.current_image)
+    #             msg = Int32()
+    #             msg.data = pred
+    #             self.class_pub.publish(msg)
+    #             self.get_logger().info(f'Published sign class: {pred}')
+    #         except Exception as e:
+    #             self.get_logger().error(f"Classification failed: {str(e)}")
+    #     else:
+    #         self.get_logger().warn(f'Not at classification distance: {self.front_distance}m')
+
     def classify_image(self):
-        if self.front_distance <= self.classification_distance: # and self.front_distance > self.min_distance:
-            try:
+        try:
+            if self.current_image is not None:
                 pred = predict(self.model, self.current_image)
                 msg = Int32()
                 msg.data = pred
                 self.class_pub.publish(msg)
                 self.get_logger().info(f'Published sign class: {pred}')
-            except Exception as e:
-                self.get_logger().error(f"Classification failed: {str(e)}")
-        else:
-            self.get_logger().warn(f'Not at classification distance: {self.front_distance}m')
+        except Exception as e:
+            self.get_logger().error(f"Classification failed: {str(e)}")
         
 def main(args=None):
     rclpy.init(args=args)

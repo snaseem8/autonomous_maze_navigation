@@ -32,6 +32,7 @@ class NavigatorNode(Node):
         self.vote_threshold = 2      # require ≥2 votes
         self.last_class     = None   # for fallback single vote
         self.initial_class_done = False   # checks if we are starting in idle
+        
 
         
         # Subscribers
@@ -147,20 +148,21 @@ class NavigatorNode(Node):
     #     self.process_sign()
 
     def class_callback(self, msg):
-        
-        if self.goal_reached or self.state != 'IDLE' or self.ignore_classification:
-            return
-        self.current_class = msg.data
-        self.get_logger().info(f'Received sign class: {self.current_class}')
-        self.process_sign()
-
-        # stash the most recent classification no matter what
+        # Always store last_class, regardless of state
         self.last_class = msg.data
-
-        # only collect votes while approaching the wall
+        
+        # Collect votes during approach
         if self.state == 'MOVING_FORWARD' and 0.4 < self.front_distance <= 1.0:
             self.class_votes.append(msg.data)
             self.get_logger().info(f'Collected class vote: {msg.data}')
+        
+        # Only process sign class in IDLE state when not ignoring
+        if self.goal_reached or self.state != 'IDLE' or self.ignore_classification:
+            return
+            
+        self.current_class = msg.data
+        self.get_logger().info(f'Received sign class: {self.current_class}')
+        self.process_sign()
 
             
     def process_sign(self):
@@ -243,7 +245,6 @@ class NavigatorNode(Node):
     def drive_controller(self):
         if self.front_distance > self.target_distance:
             # Drive forward
-            linear_vel = min(self.kp_linear * (self.front_distance - (self.target_distance - 0.1)), self.linear_speed_max)
             linear_vel = min(self.kp_linear * (self.front_distance - (self.target_distance - 0.1)), self.linear_speed_max)
             cmd = Twist()
             cmd.linear.x = linear_vel
