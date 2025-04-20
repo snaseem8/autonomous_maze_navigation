@@ -120,7 +120,7 @@ class SignClassifierNode(Node):
             coord_msg = Float32MultiArray()
             coord_msg.data = self.coord
             self._coord_publisher.publish(coord_msg)
-            self.get_logger().error(f"Publishing coordinates: {coord_msg.data}")    
+            # self.get_logger().info(f"Publishing coordinates: {coord_msg.data}")    
         
         # Displaying image for debugging
         if self.current_image is not None:    
