@@ -3,7 +3,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage, LaserScan
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
-from std_msgs.msg import Int32, Float32
+from std_msgs.msg import Int32, Float32, Float32MultiArray
 from cv_bridge import CvBridge
 import cv2
 import os
@@ -26,19 +26,20 @@ class SignClassifierNode(Node):
         image_qos_profile_img.durability = QoSDurabilityPolicy.VOLATILE 
         image_qos_profile_img.reliability = QoSReliabilityPolicy.BEST_EFFORT 
         
-        # # Set Parameters to show image
-        # self.declare_parameter('show_image_bool', True)
-        # self.declare_parameter('window_name', "Raw Image")
-        # self.current_image = None
+        # Set Parameters to show image
+        self.declare_parameter('show_image_bool', True)
+        self.declare_parameter('window_name', "frame")
+        self.current_image = None
 
-        # # Determine Window Showing Based on Input
-        # self._display_image = bool(self.get_parameter('show_image_bool').value)
+        # Determine Window Showing Based on Input
+        self._display_image = bool(self.get_parameter('show_image_bool').value)
 
-        # # Declare some variables
-        # self._titleOriginal = self.get_parameter('window_name').value
-        # if self._display_image:
-        #     cv2.namedWindow(self._titleOriginal, cv2.WINDOW_AUTOSIZE)
-        #     cv2.moveWindow(self._titleOriginal, 50, 50)
+        # Declare some variables
+        self._titleOriginal = self.get_parameter('window_name').value
+        if self._display_image:
+            cv2.namedWindow(self._titleOriginal, cv2.WINDOW_AUTOSIZE)
+            cv2.moveWindow(self._titleOriginal, 50, 50)
+            cv2.setMouseCallback(self._titleOriginal, self._click_event)  # Set mouse click event
         
         # Load model
         model_path = os.path.join(os.path.dirname(__file__), 'knn_model_color.pkl')
@@ -52,6 +53,7 @@ class SignClassifierNode(Node):
         self.classification_distance = 1.0
         self.min_distance = 0.2  # Stop classifying if closer
         self.cone_angle = np.deg2rad(14.0)  # 14 deg cone for distance averaging
+        self.coord = None
         
         # Subscribers
         self.image_sub = self.create_subscription(
@@ -59,67 +61,169 @@ class SignClassifierNode(Node):
         self.front_dist_sub = self.create_subscription(
             Float32, '/front_dist', self.front_dist_callback, 10)
         
-        # Publisher
+        # Publishers
         self.class_pub = self.create_publisher(Int32, '/sign_class', 10)
+        self._coord_publisher = self.create_publisher(Float32MultiArray, '/coordinates', 10)
         
         # State
         self.current_image = None
         self.front_distance = float('inf')
         
+    def _click_event(self, event, x, y, flags, param):
+        """ Callback function to get HSV value from a clicked pixel. """
+        if event == cv2.EVENT_LBUTTONDOWN and self.img is not None:
+            hsv_frame = cv2.cvtColor(self.img, cv2.COLOR_BGR2HSV)
+            clicked_hsv = hsv_frame[y, x]  # Get HSV value at click
+            h, s, v = clicked_hsv
+
+            # Define a small range around the clicked HSV value
+            self.lower_hsv = np.array([max(0, h - 10), max(0, s - 40), max(0, v - 40)])
+            self.upper_hsv = np.array([min(179, h + 10), min(255, s + 40), min(255, v + 40)])
+            
+            self.get_logger().info(f"HSV lower: {self.lower_hsv}.   HSV upper: {self.upper_hsv}.")
+        
     def image_callback(self, CompressedImage):
         try:
-            print('Testing')
             # Convert compressed image to OpenCV BGR format
-            img = CvBridge().compressed_imgmsg_to_cv2(CompressedImage, "bgr8")
+            self.img = CvBridge().compressed_imgmsg_to_cv2(CompressedImage, "bgr8")
             
-            # Convert to grayscale for edge detection
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            # Attempt to isolate sign using color thresholding
+            mask, color_name = self.isolate_sign_by_color(self.img)
+            sign_region, rect_coord = self.find_sign_region(self.img, mask)
+            x, y, w, h = rect_coord
             
-            # Apply Gaussian blur to reduce noise
-            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            # get pixel centroid of bounding box
+            height, width, _ = self.img.shape
+            centroid_x = x + w // 2
+            centroid_y = y + h // 2
+            if w >= 1 and h >= 1:
+                # Convert x_object pixel value to degrees
+                self.coord = [float(centroid_x), float(centroid_y), float(width//2), float(height//2)] #centroid x, centroid y, image center x, image center y
+            else:
+                self.coord = [float(width//2), float(height//2), float(width//2), float(height//2)] # if bounding box returns 0s, set centroid to image center so there is no error
             
-            # Perform Canny edge detection
-            edges = cv2.Canny(blurred, 50, 150)
-            
-            # Find contours
-            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
-            if contours:
-                # Filter contours by area (e.g., min area to avoid noise, adjust#> adjust as needed
-                min_contour_area = 3000
-                valid_contours = None # [c for c in contours if cv2.contourArea(c) > min_contour_area]
-                
-                if valid_contours:
-                    # Get the largest valid contour (assumed to be the sign)
-                    largest_contour = max(valid_contours, key=cv2.contourArea)
-                    
-                    # Get bounding box around the sign
-                    x, y, w, h = cv2.boundingRect(largest_contour)
-                    
-                    # Add padding to the bounding box
-                    padding = 20
-                    x = max(x - padding, 0)
-                    y = max(y - padding, 0)
-                    w = min(w + 2 * padding, img.shape[1] - x)
-                    h = min(h + 2 * padding, img.shape[0] - y)
-                    
-                    # Crop the image around the sign (in BGR format for classifier)
-                    self.current_image = img[y:y+h, x:x+w]
-                else:
-                    # Fallback: use the entire image if no valid contours are found
-                    # self.get_logger().warn("No valid contours detected, using entire image")
-                    self.current_image = img
-                    
-            # # Display the processed frame for debugging
-            # cv2.imshow(self._titleOriginal, self.current_image)
-            
-            # # Wait for key press and close window
-            # if cv2.waitKey(1) == ord('q'):
-            #     cv2.destroyAllWindows()  # Close all OpenCV windows when 'q' is pressed
-                    
+            mask_area = cv2.countNonZero(mask)
+            self.get_logger().info(f"Mask area: {mask_area}")
+            if sign_region is not None and mask_area > 800:
+                self.current_image = sign_region
+                self.get_logger().info(f"using cropped image by color ({color_name})")
+            else:
+                self.get_logger().warn("Color-based sign detection failed, using full image")
+                self.current_image = self.img
+
         except Exception as e:
             self.get_logger().error(f"Failed to process image: {str(e)}")
             self.current_image = None
+            
+        # Publish coordinates
+        if self.coord is not None:
+            coord_msg = Float32MultiArray()
+            coord_msg.data = self.coord
+            self._coord_publisher.publish(coord_msg)
+            self.get_logger().error(f"Publishing coordinates: {coord_msg.data}")    
+        
+        # Displaying image for debugging
+        if self.current_image is not None:    
+            # Display the processed frame and bounding box
+            cv2.rectangle(self.img, (x, y), (x + w, y + h), (0, 255, 20), 3)
+            cv2.imshow('frame', self.img)
+
+            # Wait for key press and close window
+            if cv2.waitKey(1) == ord('q'):
+                cv2.destroyAllWindows()  # Close all OpenCV windows when 'q' is pressed
+
+    def isolate_sign_by_color(self, image):
+        """Identify sign regions using color thresholding"""
+        
+        # Color ranges in HSV for different sign colors
+        COLOR_RANGES = {
+            'red1': ([0, 175, 175], [10, 255, 255]),
+            'red2': ([160, 130, 140], [179, 255, 255]),
+            'blue': ([102, 85, 65], [135, 215, 190]),
+            'green': ([68, 104, 39], [98, 254, 212])}
+        
+        hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        
+        best_mask = None
+        best_color = None
+        best_area = 0
+        
+        # Try each color range
+        for color_name, (lower, upper) in COLOR_RANGES.items():
+            lower = np.array(lower)
+            upper = np.array(upper)
+            mask = cv2.inRange(hsv_img, lower, upper)
+            
+            # Clean up mask
+            kernel = np.ones((5, 5), np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+            
+            # Find contours
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            if contours:
+                largest_contour = max(contours, key=cv2.contourArea)
+                area = cv2.contourArea(largest_contour)
+                
+                if area > best_area and area > 100:
+                    best_area = area
+                    best_mask = mask
+                    best_color = color_name
+        
+        # Special handling for red (which spans two HSV ranges)
+        if best_color in ['red1', 'red2']:
+            # Combine both red masks
+            red1_lower = np.array(COLOR_RANGES['red1'][0])
+            red1_upper = np.array(COLOR_RANGES['red1'][1])
+            red2_lower = np.array(COLOR_RANGES['red2'][0])
+            red2_upper = np.array(COLOR_RANGES['red2'][1])
+            
+            mask1 = cv2.inRange(hsv_img, red1_lower, red1_upper)
+            mask2 = cv2.inRange(hsv_img, red2_lower, red2_upper)
+            best_mask = cv2.bitwise_or(mask1, mask2)
+            
+            kernel = np.ones((5, 5), np.uint8)
+            best_mask = cv2.morphologyEx(best_mask, cv2.MORPH_OPEN, kernel)
+            best_mask = cv2.morphologyEx(best_mask, cv2.MORPH_CLOSE, kernel)
+            
+            best_color = 'red'
+        
+        return best_mask, best_color
+
+    def find_sign_region(self, image, mask):
+        """Extract the sign region using the color mask"""
+        if mask is None:
+            return None
+        
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if not contours:
+            return None
+        
+        largest_contour = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(largest_contour)
+        
+        if area < 100:
+            return None
+        
+        x, y, w, h = cv2.boundingRect(largest_contour)
+        
+        # Add a small margin
+        margin = 10
+        x = max(0, x - margin)
+        y = max(0, y - margin)
+        w = min(image.shape[1] - x, w + 2*margin)
+        h = min(image.shape[0] - y, h + 2*margin)
+        
+        rect_coord = (x, y, w, h)
+        
+        sign_region = image[y:y+h, x:x+w]
+        
+        if sign_region.size == 0:
+            return None
+        
+        return sign_region, rect_coord
             
     def front_dist_callback(self, msg):
         self.front_distance = msg.data
@@ -152,6 +256,7 @@ class SignClassifierNode(Node):
                 self.get_logger().info(f'Published sign class: {pred}')
         except Exception as e:
             self.get_logger().error(f"Classification failed: {str(e)}")
+            
         
 def main(args=None):
     rclpy.init(args=args)

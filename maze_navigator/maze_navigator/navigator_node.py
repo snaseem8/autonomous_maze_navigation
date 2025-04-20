@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Int32, Float32
+from std_msgs.msg import Int32, Float32, Float32MultiArray
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
@@ -25,8 +25,9 @@ class NavigatorNode(Node):
         self.target_distance = 0.5
         self.linear_speed_max = 0.15  # m/s max
         self.angular_speed_max = 1.5  # rad/s max
-        self.kp_linear = 0.5  # P gain for linear error
+        self.kp_linear = 0.4  # P gain for linear error
         self.kp_angular = 1.0  # P gain for angular error
+        self.kp_forward_angular = 0.05  # P gain for angular error when in forward state
         self.angular_tolerance = np.deg2rad(5.0)  # 5 deg
         self.class_votes = []
         self.vote_threshold = 2      # require ≥2 votes
@@ -42,6 +43,11 @@ class NavigatorNode(Node):
             LaserScan, '/scan', self.scan_callback, image_qos_profile)
         self.odom_sub = self.create_subscription(
             Odometry, '/odom', self.odom_callback, 10)
+        self.centroid_subscriber = self.create_subscription(
+            Float32MultiArray,
+            '/coordinates',
+            self.coordinate_callback,
+            image_qos_profile)
         
         # Publisher
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -77,6 +83,10 @@ class NavigatorNode(Node):
             self.turn_controller()
         elif self.state == 'MOVING_FORWARD':
             self.drive_controller()
+            
+    def coordinate_callback(self, msg):
+        self.coord = msg.data
+        self.get_logger().error(f"Receiving coordinates: {self.coord}") 
         
     def scan_callback(self, msg):
         # Compute front distance (14° cone)
@@ -248,6 +258,16 @@ class NavigatorNode(Node):
             linear_vel = min(self.kp_linear * (self.front_distance - (self.target_distance - 0.1)), self.linear_speed_max)
             cmd = Twist()
             cmd.linear.x = linear_vel
+            
+            # if self.front_distance < 0.8:
+            #     bounding_centroid_x = self.coord[0]
+            #     center_camera_x = self.coord[2]
+                
+            #     angular_error = bounding_centroid_x - center_camera_x
+            #     self.angular_cmd_vel = self.kp_forward_angular * angular_error
+            #     self.angular_cmd_vel = max(min(self.angular_cmd_vel, self.angular_speed_max), -self.angular_speed_max)
+            #     cmd.angular.z = self.angular_cmd_vel
+                
             self.cmd_vel_pub.publish(cmd)
             self.get_logger().info(f'Driving forward, distance to wall: {self.front_distance:.2f}m')
         # else:
