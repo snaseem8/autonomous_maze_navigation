@@ -1,63 +1,55 @@
 import rclpy
 from rclpy.node import Node
+from tf2_ros import Buffer, TransformListener
 from rclpy.duration import Duration
-from rclpy.time import Time
-from std_msgs.msg import Float32MultiArray
-
-from geometry_msgs.msg import PoseStamped
-import tf2_ros
 from tf_transformations import euler_from_quaternion
-import time
+from geometry_msgs.msg import PoseStamped
 
 
-class PoseListener(Node):
+class RealRobotPose(Node):
     def __init__(self):
-        super().__init__('pose_listener')
+        super().__init__('real_robot_pose_listener')
 
-        self.tf_buffer = tf2_ros.Buffer()
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        self.timer = self.create_timer(1.0, self.timer_callback)  # 1 Hz
-        # publish the map→base_link pose as a [x,y,yaw] array
-        self.pose_pub = self.create_publisher(Float32MultiArray, '/pose_array', 10)
+        self.timer = self.create_timer(1.0, self.get_pose)  # check every second
 
-    def timer_callback(self):
+    def get_pose(self):
         try:
-            # Ask for the latest available transform
-            now = self.get_clock().now()
-            timeout = Duration(seconds=2.0)
+            # target frame is usually 'map' (if using AMCL), otherwise use 'odom'
+            from_frame = 'map'
+            to_frame = 'base_link'
 
-            if not self.tf_buffer.can_transform('map', 'base_link', now, timeout):
-                self.get_logger().warn('Transform map → base_link not yet available.')
+            if not self.tf_buffer.can_transform(from_frame, to_frame, rclpy.time.Time()):
+                self.get_logger().warn(f"No transform from {from_frame} to {to_frame} yet")
                 return
 
-            transform = self.tf_buffer.lookup_transform('map', 'base_link', now)
+            trans = self.tf_buffer.lookup_transform(
+                from_frame,
+                to_frame,
+                rclpy.time.Time(),  # time=0 → latest transform
+                timeout=Duration(seconds=2)
+            )
 
-            # Extract translation
-            x = transform.transform.translation.x
-            y = transform.transform.translation.y
-
-            # Extract yaw from quaternion
-            q = transform.transform.rotation
+            x = trans.transform.translation.x
+            y = trans.transform.translation.y
+            q = trans.transform.rotation
             _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
 
-            # self.get_logger().info(f"Robot position: x={x:.2f}, y={y:.2f}, yaw={yaw:.2f} rad")
+            self.get_logger().info(f"Real Robot Pose → x: {x:.2f}, y: {y:.2f}, yaw: {yaw:.2f} rad")
 
         except Exception as e:
-            self.get_logger().error(f"Transform lookup failed: {str(e)}")
-        
-        # publish it as [x, y, yaw]
-        msg = Float32MultiArray()
-        msg.data = [x, y, yaw]
-        self.pose_pub.publish(msg)
-        self.get_logger().info(f"Publishing robot position: {msg.data}")
+            self.get_logger().error(f"Transform error: {str(e)}")
 
 
 def main(args=None):
     rclpy.init(args=args)
-    node = PoseListener()
-    rclpy.spin(node)
-    node.destroy_node()
+    node = RealRobotPose()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     rclpy.shutdown()
 
 

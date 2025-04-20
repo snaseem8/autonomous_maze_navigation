@@ -4,7 +4,7 @@ from rclpy.node import Node
 from std_msgs.msg import Int32, Float32, Float32MultiArray
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
 import numpy as np
 import tf2_ros
@@ -42,8 +42,7 @@ class NavigatorNode(Node):
             Int32, '/sign_class', self.class_callback, 10)
         self.scan_sub = self.create_subscription(
             LaserScan, '/scan', self.scan_callback, image_qos_profile)
-        # self.odom_sub = self.create_subscription(
-        #     Odometry, '/odom', self.odom_callback, 10)
+        self.amcl_sub = self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.amcl_callback, 10)
         self.centroid_subscriber = self.create_subscription(
             Float32MultiArray,
             '/coordinates',
@@ -75,20 +74,23 @@ class NavigatorNode(Node):
         yaw = math.atan2(siny_cosp, cosy_cosp)
         return yaw
         
-    # def odom_callback(self, msg):
-    #     # Extract pose (x, y, yaw) from /odom
-    #     x_current = msg.pose.pose.position.x
-    #     y_current = msg.pose.pose.position.y
-    #     orientation = msg.pose.pose.orientation
-    #     quaternion = [orientation.x, orientation.y, orientation.z, orientation.w]
-    #     yaw = self.quaternion_to_yaw(quaternion)
-    #     self.current_pose = (x_current, y_current, yaw)
-        
-    #     # Run controllers based on state
-    #     if self.state == 'TURNING' and self.target_yaw is not None:
-    #         self.turn_controller()
-    #     elif self.state == 'MOVING_FORWARD':
-    #         self.drive_controller()
+    def amcl_callback(self, msg: PoseWithCovarianceStamped):
+        # extract x, y
+        x = msg.pose.pose.position.x
+        y = msg.pose.pose.position.y
+        # convert quaternion → yaw
+        quat = msg.pose.pose.orientation
+        yaw = self.quaternion_to_yaw([quat.x, quat.y, quat.z, quat.w])
+        self.current_pose = (x, y, yaw)
+
+        # run whichever controller is active
+        if self.state == 'TURNING' and self.target_yaw is not None:
+            self.turn_controller()
+        elif self.state == 'MOVING_FORWARD':
+            self.drive_controller()
+            
+    def normalize_angle(self, angle):
+        return math.atan2(math.sin(angle), math.cos(angle))
 
     def pose_callback(self, msg):
         x, y, yaw = msg.data
