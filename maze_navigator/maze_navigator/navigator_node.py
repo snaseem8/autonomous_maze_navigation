@@ -83,8 +83,8 @@ class NavigatorNode(Node):
         self.current_pose = (x, y, yaw)
 
         # run whichever controller is active
+        self.get_logger().info(f'target yaw: {self.target_yaw}')
         if self.state == 'TURNING' and self.target_yaw is not None:
-            self.get_logger().info(f'target yaw: {self.target_yaw}')
             self.turn_controller()
         elif self.state == 'MOVING_FORWARD':
             self.drive_controller()
