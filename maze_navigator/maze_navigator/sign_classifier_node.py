@@ -87,16 +87,13 @@ class SignClassifierNode(Node):
             # Convert compressed image to OpenCV BGR format
             self.img = CvBridge().compressed_imgmsg_to_cv2(CompressedImage, "bgr8")
             
-            # Attempt to isolate sign using color thresholding
-            mask, color_name = self.isolate_sign_by_color(self.img)
-
-            # Initialize default values
-            x, y, w, h = 0, 0, 0, 0
-            # Check if find_sign_region returns something before unpacking
+            mask, _ = self.isolate_sign_by_color(self.img)
             result = self.find_sign_region(self.img, mask)
             if result is not None:
-                sign_region, rect_coord = result
-                x, y, w, h = rect_coord
+                sign_region, (x, y, w, h) = result
+            else:
+                x = y = w = h = 0
+
             
             # get pixel centroid of bounding box
             height, width, _ = self.img.shape
@@ -122,14 +119,17 @@ class SignClassifierNode(Node):
             # self.get_logger().info(f"Publishing coordinates: {coord_msg.data}")    
         
         # Displaying image for debugging
-        if self.current_image is not None:    
-            # Display the processed frame and bounding box
-            cv2.rectangle(self.img, (x, y), (x + w, y + h), (0, 255, 20), 3)
-            cv2.imshow('frame', self.img)
+        if self.current_image is not None:
+            try:
+                # Display the processed frame and bounding box
+                cv2.rectangle(self.img, (x, y), (x + w, y + h), (0, 255, 20), 3)
+                cv2.imshow('frame', self.img)
 
-            # Wait for key press and close window
-            if cv2.waitKey(1) == ord('q'):
-                cv2.destroyAllWindows()  # Close all OpenCV windows when 'q' is pressed
+                # Wait for key press and close window
+                if cv2.waitKey(1) == ord('q'):
+                    cv2.destroyAllWindows()
+            except Exception as e:
+                self.get_logger().warn(f"OpenCV display error: {str(e)}")
 
     def isolate_sign_by_color(self, image):
         """Identify sign regions using color thresholding"""
@@ -199,47 +199,49 @@ class SignClassifierNode(Node):
         return best_mask, best_color
 
     def find_sign_region(self, image, mask):
-        """Extract the sign region using the color mask with basic filtering"""
+        """Extract the sign region using the color mask, with a hard 40% box‑area cap."""
         if mask is None:
             return None
-        
+
+        img_h, img_w = image.shape[:2]
+        max_box_area = img_h * img_w * 0.4
+
+        # find contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
         if not contours:
             return None
-        
-        largest_contour = max(contours, key=cv2.contourArea)
-        area = cv2.contourArea(largest_contour)
-        
-        # Check both minimum AND maximum area
-        min_area = 150
-        max_area = image.shape[0] * image.shape[1] * 0.4  # Max 40% of frame
-        
-        if area < min_area or area > max_area:
+
+        # pick the largest contour
+        largest = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(largest)
+        if area < 150 or area > max_box_area:
             return None
-        
-        x, y, w, h = cv2.boundingRect(largest_contour)
-        
-        # Aspect ratio filter - most signs are roughly square
-        aspect_ratio = float(w) / h if h > 0 else 0
-        if aspect_ratio < 0.5 or aspect_ratio > 2.0:
-            return None
-        
-        # Add a small margin
+
+        # bounding box + margin
+        x, y, w, h = cv2.boundingRect(largest)
         margin = 20
         x = max(0, x - margin)
         y = max(0, y - margin)
-        w = min(image.shape[1] - x, w + 2*margin)
-        h = min(image.shape[0] - y, h + 2*margin)
-        
-        rect_coord = (x, y, w, h)
-        
-        sign_region = image[y:y+h, x:x+w]
-        
-        if sign_region.size == 0:
+        w = min(img_w - x, w + 2 * margin)
+        h = min(img_h - y, h + 2 * margin)
+
+        # enforce box‑area cap
+        if w * h > max_box_area:
             return None
-        
-        return sign_region, rect_coord
+
+        # aspect‑ratio filter
+        ar = float(w) / h if h > 0 else 0
+        if ar < 0.5 or ar > 2.0:
+            return None
+
+        # crop and return
+        region = image[y:y+h, x:x+w]
+        if region.size == 0:
+            return None
+
+        return region, (x, y, w, h)
+
+
             
     def front_dist_callback(self, msg):
         self.front_distance = msg.data

@@ -84,36 +84,30 @@ def isolate_sign_by_color(image):
     return best_mask, best_color
 
 def find_sign_region(image, mask):
-    """Extract the sign region using the color mask"""
-    if mask is None:
-        return None
-    
+    img_h, img_w = image.shape[:2]
+    max_box_area = img_h * img_w * 0.4
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
     if not contours:
         return None
-    
-    largest_contour = max(contours, key=cv2.contourArea)
-    area = cv2.contourArea(largest_contour)
-    
-    if area < 100:
+    largest = max(contours, key=cv2.contourArea)
+    area = cv2.contourArea(largest)
+    if area < 150 or area > max_box_area:
         return None
-    
-    x, y, w, h = cv2.boundingRect(largest_contour)
-    
-    # Add a small margin
-    margin = 10
+    x, y, w, h = cv2.boundingRect(largest)
+    margin = 20
     x = max(0, x - margin)
     y = max(0, y - margin)
-    w = min(image.shape[1] - x, w + 2*margin)
-    h = min(image.shape[0] - y, h + 2*margin)
-    
-    sign_region = image[y:y+h, x:x+w]
-    
-    if sign_region.size == 0:
+    w = min(img_w - x, w + 2*margin)
+    h = min(img_h - y, h + 2*margin)
+    if w * h > max_box_area:
         return None
-    
-    return sign_region
+    ar = float(w)/h if h>0 else 0
+    if ar<0.5 or ar>2.0:
+        return None
+    region = image[y:y+h, x:x+w]
+    if region.size == 0:
+        return None
+    return region, (x, y, w, h)
 
 def extract_features(image):
     """Extract HOG and color features from an image"""
@@ -196,8 +190,9 @@ def process_directory(data_dir):
         
         # Process features from sign region or whole image
         if mask is not None:
-            sign_region = find_sign_region(image, mask)
-            if sign_region is not None:
+            result = find_sign_region(image, mask)
+            if result is not None:
+                sign_region, _ = result
                 # Original sign region
                 features.append(extract_features(sign_region))
                 labels.append(label)
@@ -205,9 +200,9 @@ def process_directory(data_dir):
                 # Augmentations (reduced to 2 for conciseness)
                 for i in range(7):
                     angle = random.uniform(-15, 15)
-                    height, width = sign_region.shape[:2]
-                    M = cv2.getRotationMatrix2D((width/2, height/2), angle, 1)
-                    rotated = cv2.warpAffine(sign_region, M, (width, height))
+                    h, w = sign_region.shape[:2]
+                    M = cv2.getRotationMatrix2D((w/2, h/2), angle, 1)
+                    rotated = cv2.warpAffine(sign_region, M, (w, h))
                     
                     features.append(extract_features(rotated))
                     labels.append(label)

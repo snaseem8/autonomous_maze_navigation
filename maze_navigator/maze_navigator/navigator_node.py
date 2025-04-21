@@ -51,9 +51,18 @@ class NavigatorNode(Node):
         self.initial_class_done = False   # checks if we are starting in idle
         self.stabilization_time = 1.5  # seconds to wait after turning
         self.turn_complete_time = None  # will store the timestamp when turn completes
-        self.state = 'IDLE'  # IDLE, TURNING, STABILIZING, MOVING_FORWARD
-
         
+        # Wall alignment parameters
+        self.wall_alignment_fov = np.deg2rad(30.0)  # 30 degree field of view
+        self.kp_wall_alignment = 1.0  # P gain for wall alignment
+        self.wall_alignment_tolerance = np.deg2rad(3.0)  # 3 degrees tolerance
+        self.post_alignment_time = 1.5  # seconds to wait after alignment
+        self.alignment_complete_time = None  # timestamp when alignment completes
+
+
+        # State: IDLE, TURNING, STABILIZING, MOVING_FORWARD, ALIGNING
+        self.state = 'IDLE'  
+
         # Subscribers
         self.class_sub = self.create_subscription(
             Int32, '/sign_class', self.class_callback, 10)
@@ -65,11 +74,6 @@ class NavigatorNode(Node):
             '/coordinates',
             self.coordinate_callback,
             image_qos_profile)
-        # self.pose_sub = self.create_subscription(
-        #     Float32MultiArray,
-        #     '/pose_array',
-        #     self.pose_callback,
-        #     image_qos_profile)
         
         # Publisher
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -78,7 +82,6 @@ class NavigatorNode(Node):
         # State
         self.front_distance = float('inf')
         self.current_class = None
-        self.state = 'IDLE'  # IDLE, TURNING, MOVING_FORWARD
         self.goal_reached = False
         self.current_pose = (0.0, 0.0, 0.0)  # (x, y, yaw)
         self.target_yaw = None  # Target yaw for turning
@@ -144,6 +147,30 @@ class NavigatorNode(Node):
                 self.get_logger().info('Camera stabilized, moving forward to next wall')
         elif self.state == 'MOVING_FORWARD' and self.target_yaw is not None:
             self.drive_controller()
+        elif self.state == 'ALIGNING':
+            self.wall_alignment_controller()
+        elif self.state == 'ALIGNMENT_STABILIZING':
+            # Check if post-alignment stabilization time has elapsed
+            current_time = self.get_clock().now().seconds_nanoseconds()[0]
+            if current_time - self.alignment_complete_time >= self.post_alignment_time:
+                # Transition to sign processing
+                self.get_logger().info('Post-alignment stabilization complete, processing sign')
+                # Simply transition to IDLE and call the existing function to process votes
+                self.state = 'IDLE'
+                self.target_yaw = None
+                self.ignore_classification = False
+                
+                # Use your existing code for handling votes and process_sign()
+                # (You already have this code in your existing implementation)
+                n_votes = len(self.class_votes)
+                if n_votes >= self.vote_threshold:
+                    most_common = max(set(self.class_votes), key=self.class_votes.count)
+                    self.current_class = most_common
+                else:
+                    self.current_class = self.last_class
+                
+                self.class_votes.clear()
+                self.process_sign()
 
     def amcl_callback(self, msg: PoseWithCovarianceStamped):
         try:
@@ -176,22 +203,8 @@ class NavigatorNode(Node):
     def normalize_angle(self, angle):
         return math.atan2(math.sin(angle), math.cos(angle))
 
-    # def pose_callback(self, msg):
-    #     x, y, yaw = msg.data
-    #     # store as a tuple
-    #     self.current_pose = (x, y, yaw)
-    #     self.get_logger().info(f"Receiving pose: {self.current_pose}") 
-
-    #     # Run controllers based on state
-    #     if self.state == 'TURNING' and self.target_yaw is not None:
-    #         self.turn_controller()
-    #     elif self.state == 'MOVING_FORWARD':
-    #         self.drive_controller()
-
-
     def coordinate_callback(self, msg):
         self.coord = msg.data
-        # self.get_logger().info(f"Receiving coordinates: {self.coord}") 
         
     def scan_callback(self, msg):
         # Compute front distance (14° cone)
@@ -207,9 +220,7 @@ class NavigatorNode(Node):
         dist_msg = Float32()
         dist_msg.data = self.front_distance
         self.front_dist_pub.publish(dist_msg)
-        # self.get_logger().info(f'publishing front distance: {dist_msg.data}')
         
-
         # One‐time initial classification if we start in IDLE and are at a wall
         if (not self.initial_class_done
             and self.state == 'IDLE'
@@ -230,38 +241,77 @@ class NavigatorNode(Node):
         if self.front_distance <= self.target_distance and self.state == 'MOVING_FORWARD':
             # stop and reset state
             self.stop_robot()
-            self.state = 'IDLE'
-            self.target_yaw = None
-            self.ignore_classification = False
-
-            n_votes = len(self.class_votes)
-            if n_votes >= self.vote_threshold:
-                # use the mode of the votes
-                most_common = max(set(self.class_votes), key=self.class_votes.count)
-                self.get_logger().info(f'Using mode of {n_votes} votes → {most_common}')
-                self.current_class = most_common
-            else:
-                # fallback: ignore votes, use the last raw class
-                self.get_logger().warn(
-                    f'Only {n_votes} vote(s); falling back to most recent class {self.last_class}'
-                )
-                self.current_class = self.last_class
-
-            # clear votes for the next wall
-            self.class_votes.clear()
-
-            # now act on whichever class we chose
-            self.process_sign()
-
-
+            
+            # Enter ALIGNING state instead of IDLE 
+            self.state = 'ALIGNING'
+            self.get_logger().info('Reached wall, aligning perpendicular to wall...')
+            
+            # Store wall scan data for alignment
+            self.wall_scan = msg
+            
+            # Skip the rest of the scan_callback
+            return
         
-    # def class_callback(self, msg):
-    #     if self.goal_reached or self.state != 'IDLE' or self.ignore_classification:
-    #         return
-    #     self.current_class = msg.data
-    #     self.get_logger().info(f'Received sign class: {self.current_class}')
-    #     self.process_sign()
+        # Update wall scan data if in ALIGNING state
+        if self.state == 'ALIGNING':
+            self.wall_scan = msg
 
+    def wall_alignment_controller(self):
+        """Align robot perpendicular to the wall"""
+        if not hasattr(self, 'wall_scan'):
+            self.get_logger().warn('No wall scan data available for alignment')
+            self.state = 'IDLE'  # Fall back to IDLE state
+            return
+        
+        # Find closest point in field of view
+        angles = np.array([self.wall_scan.angle_min + i * self.wall_scan.angle_increment 
+                          for i in range(len(self.wall_scan.ranges))])
+        fov_half = self.wall_alignment_fov / 2
+        wall_indices = np.where((angles >= -fov_half) & (angles <= fov_half))[0]
+        
+        # Find the closest valid point and its angle
+        min_distance = float('inf')
+        min_angle = 0.0
+        
+        for i in wall_indices:
+            if (np.isfinite(self.wall_scan.ranges[i]) and 
+                self.wall_scan.range_min <= self.wall_scan.ranges[i] <= self.wall_scan.range_max and
+                self.wall_scan.ranges[i] < min_distance):
+                min_distance = self.wall_scan.ranges[i]
+                min_angle = angles[i]
+        
+        # If we found a valid closest point
+        if min_distance < float('inf'):
+            # To be perpendicular to wall, closest point should be at angle 0
+            # If min_angle is positive, turn right (negative angular velocity)
+            # If min_angle is negative, turn left (positive angular velocity)
+            
+            self.get_logger().info(f'Wall alignment: closest point at angle {min_angle:.4f}')
+            
+            # When alignment is complete:
+            if abs(min_angle) <= self.wall_alignment_tolerance:
+                self.get_logger().info('Wall alignment complete, starting post-alignment stabilization')
+                self.stop_robot()
+                
+                # Record the time and transition to stabilizing
+                self.alignment_complete_time = self.get_clock().now().seconds_nanoseconds()[0]
+                self.state = 'ALIGNMENT_STABILIZING'
+            else:
+                # Apply P controller for alignment
+                angular_vel = -self.kp_wall_alignment * min_angle
+                angular_vel = max(min(angular_vel, self.angular_speed_max/2), -self.angular_speed_max/2)
+                
+                cmd = Twist()
+                cmd.angular.z = angular_vel
+                self.cmd_vel_pub.publish(cmd)
+                
+                self.get_logger().info(f'Aligning to wall: angle_err={min_angle:.3f}, cmd={angular_vel:.3f}')
+        else:
+            # If no valid points found, skip alignment
+            self.get_logger().warn('No valid wall points found for alignment')
+            self.state = 'IDLE'
+            self.process_sign()
+        
     def class_callback(self, msg):
         # Always store last_class, regardless of state
         self.last_class = msg.data
@@ -281,8 +331,6 @@ class NavigatorNode(Node):
 
             
     def process_sign(self):
-        # self.get_logger().info(f'class: {self.current_class}')
-        # self.get_logger().info(f'goal_reached: {self.goal_reached}')
         self.get_logger().info(f'current_pose: {self.current_pose}')
         if self.current_class is None or self.goal_reached or self.current_pose is None:
             return
@@ -387,14 +435,6 @@ class NavigatorNode(Node):
             cmd.angular.z = angular_vel
             self.cmd_vel_pub.publish(cmd)
             self.get_logger().info(f'Driving → dist {self.front_distance:.2f}m, yaw_err {yaw_error:.2f}rad')
-            
-        # else:
-        #     # Stop (redundant, handled by scan_callback)
-        #     self.stop_robot()
-        #     self.state = 'IDLE'
-        #     self.target_yaw = None
-        #     self.ignore_classification = False
-        #     self.get_logger().info('Reached wall, ready for next classification')
         
     def stop_robot(self):
         cmd = Twist()
