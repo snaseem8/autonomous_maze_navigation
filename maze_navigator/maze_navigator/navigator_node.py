@@ -342,16 +342,19 @@ class NavigatorNode(Node):
         
         # Sign classes: 0=empty (recovery), 1=left, 2=right, 3=do not enter, 4=stop, 5=goal
         if self.current_class == 5:  # Goal
-            self.get_logger().info('Goal reached!')
-            self.goal_reached = True
-            self.stop_robot()
-            self.state = 'IDLE'
-            self.target_yaw = None
-            self.ignore_classification = False
+            # self.get_logger().info('Goal reached!')
+            # self.goal_reached = True
+            # self.stop_robot()
+            # self.state = 'IDLE'
+            # self.target_yaw = None
+            # self.ignore_classification = False
+            # Turn 90° right
+            self.target_yaw = current_yaw - np.pi / 2
+            self.get_logger().info(f'Turning right to yaw {self.target_yaw:.2f}')
         elif self.current_class == 0:  # Empty wall (recovery)
             # Turn 90° left
-            self.target_yaw = current_yaw + np.pi / 2
-            self.get_logger().info(f'Recovery: turning left to yaw {self.target_yaw:.2f}')
+            self.target_yaw = current_yaw - np.pi / 2
+            self.get_logger().info(f'Recovery: turning right to yaw {self.target_yaw:.2f}')
         elif self.current_class == 1:  # Left
             # Turn 90° left
             self.target_yaw = current_yaw + np.pi / 2
