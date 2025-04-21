@@ -34,7 +34,6 @@ class NavigatorNode(Node):
         self.last_class     = None   # for fallback single vote
         self.initial_class_done = False   # checks if we are starting in idle
         
-        
 
         
         # Subscribers
@@ -48,11 +47,11 @@ class NavigatorNode(Node):
             '/coordinates',
             self.coordinate_callback,
             image_qos_profile)
-        self.pose_sub = self.create_subscription(
-            Float32MultiArray,
-            '/pose_array',
-            self.pose_callback,
-            image_qos_profile)
+        # self.pose_sub = self.create_subscription(
+        #     Float32MultiArray,
+        #     '/pose_array',
+        #     self.pose_callback,
+        #     image_qos_profile)
         
         # Publisher
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -63,7 +62,7 @@ class NavigatorNode(Node):
         self.current_class = None
         self.state = 'IDLE'  # IDLE, TURNING, MOVING_FORWARD
         self.goal_reached = False
-        self.current_pose = None  # (x, y, yaw)
+        self.current_pose = (0.0, 0.0, 0.0)  # (x, y, yaw)
         self.target_yaw = None  # Target yaw for turning
         self.ignore_classification = False
         
@@ -85,6 +84,7 @@ class NavigatorNode(Node):
 
         # run whichever controller is active
         if self.state == 'TURNING' and self.target_yaw is not None:
+            self.get_logger().info(f'target yaw: {self.target_yaw}')
             self.turn_controller()
         elif self.state == 'MOVING_FORWARD':
             self.drive_controller()
@@ -92,17 +92,17 @@ class NavigatorNode(Node):
     def normalize_angle(self, angle):
         return math.atan2(math.sin(angle), math.cos(angle))
 
-    def pose_callback(self, msg):
-        x, y, yaw = msg.data
-        # store as a tuple
-        self.current_pose = (x, y, yaw)
-        self.get_logger().info(f"Receiving pose: {self.current_pose}") 
+    # def pose_callback(self, msg):
+    #     x, y, yaw = msg.data
+    #     # store as a tuple
+    #     self.current_pose = (x, y, yaw)
+    #     self.get_logger().info(f"Receiving pose: {self.current_pose}") 
 
-        # Run controllers based on state
-        if self.state == 'TURNING' and self.target_yaw is not None:
-            self.turn_controller()
-        elif self.state == 'MOVING_FORWARD':
-            self.drive_controller()
+    #     # Run controllers based on state
+    #     if self.state == 'TURNING' and self.target_yaw is not None:
+    #         self.turn_controller()
+    #     elif self.state == 'MOVING_FORWARD':
+    #         self.drive_controller()
 
 
     def coordinate_callback(self, msg):
@@ -199,7 +199,7 @@ class NavigatorNode(Node):
     def process_sign(self):
         # self.get_logger().info(f'class: {self.current_class}')
         # self.get_logger().info(f'goal_reached: {self.goal_reached}')
-        # self.get_logger().info(f'current_pose: {self.current_pose}')
+        self.get_logger().info(f'current_pose: {self.current_pose}')
         if self.current_class is None or self.goal_reached or self.current_pose is None:
             return
         
@@ -240,7 +240,7 @@ class NavigatorNode(Node):
         
         # Normalize target yaw
         if self.target_yaw is not None:
-            self.target_yaw = np.arctan2(np.sin(self.target_yaw), np.cos(self.target_yaw))
+            self.target_yaw = self.normalize_angle(self.target_yaw)
         
     def turn_controller(self):
         if self.current_pose is None or self.target_yaw is None:
@@ -275,22 +275,23 @@ class NavigatorNode(Node):
         
     def drive_controller(self):
         if self.front_distance > self.target_distance:
-            # Drive forward
-            linear_vel = min(self.kp_linear * (self.front_distance - (self.target_distance - 0.1)), self.linear_speed_max)
+            # forward P‐control
+            linear_vel = min(self.kp_linear * (self.front_distance - (self.target_distance - 0.1)),
+                             self.linear_speed_max)
+
+            # small angular correction to hold heading
+            _, _, curr_yaw = self.current_pose
+            yaw_error = self.normalize_angle(self.target_yaw - curr_yaw)
+            angular_vel = self.kp_forward_angular * yaw_error
+            angular_vel = max(min(angular_vel, self.angular_speed_max),
+                              -self.angular_speed_max)
+
             cmd = Twist()
             cmd.linear.x = linear_vel
-            
-            # if self.front_distance < 0.8:
-            #     bounding_centroid_x = self.coord[0]
-            #     center_camera_x = self.coord[2]
-                
-            #     angular_error = bounding_centroid_x - center_camera_x
-            #     self.angular_cmd_vel = self.kp_forward_angular * angular_error
-            #     self.angular_cmd_vel = max(min(self.angular_cmd_vel, self.angular_speed_max), -self.angular_speed_max)
-            #     cmd.angular.z = self.angular_cmd_vel
-                
+            cmd.angular.z = angular_vel
             self.cmd_vel_pub.publish(cmd)
-            self.get_logger().info(f'Driving forward, distance to wall: {self.front_distance:.2f}m')
+            self.get_logger().info(f'Driving → dist {self.front_distance:.2f}m, yaw_err {yaw_error:.2f}rad')
+            
         # else:
         #     # Stop (redundant, handled by scan_callback)
         #     self.stop_robot()

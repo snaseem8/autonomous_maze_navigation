@@ -12,15 +12,15 @@ def generate_launch_description():
             package='maze_navigator',
             executable='navigator_node',
             name='navigator_node'
-        ),
+        )
         # Node(
         #     package='maze_navigator',
         #     executable='debug',
         #     name='debug'
         # ),
-        Node(
-            package='maze_navigator',
-            executable='pose_listener',
-            name='pose_listener'
-        )
+        # Node(
+        #     package='maze_navigator',
+        #     executable='pose_listener',
+        #     name='pose_listener'
+        # )
     ])

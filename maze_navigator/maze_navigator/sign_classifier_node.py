@@ -102,14 +102,7 @@ class SignClassifierNode(Node):
             else:
                 self.coord = [float(width//2), float(height//2), float(width//2), float(height//2)] # if bounding box returns 0s, set centroid to image center so there is no error
             
-            mask_area = cv2.countNonZero(mask)
-            # self.get_logger().info(f"Mask area: {mask_area}")
-            if sign_region is not None and mask_area > 800:
-                self.current_image = sign_region
-                # self.get_logger().info(f"using cropped image by color ({color_name})")
-            else:
-                self.get_logger().warn("Color-based sign detection failed, using full image")
-                self.current_image = self.img
+            self.current_image = self.img
 
         except Exception as e:
             self.get_logger().error(f"Failed to process image: {str(e)}")
