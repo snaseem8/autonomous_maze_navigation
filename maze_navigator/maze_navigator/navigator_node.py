@@ -43,7 +43,7 @@ class NavigatorNode(Node):
         self.angular_speed_max = 1.5  # rad/s max
         self.kp_linear = 0.4  # P gain for linear error
         self.kp_angular = 1.0  # P gain for angular error
-        self.kp_forward_angular = 0.45  # P gain for angular error when in forward state
+        self.kp_forward_angular = 0.50  # P gain for angular error when in forward state
         self.angular_tolerance = np.deg2rad(5.0)  # 5 deg
         self.class_votes = []
         self.vote_threshold = 2      # require ≥2 votes
@@ -319,6 +319,7 @@ class NavigatorNode(Node):
         # Collect votes during approach
         if self.state == 'MOVING_FORWARD' and 0.4 < self.front_distance <= 1.0:
             self.class_votes.append(msg.data)
+            self.get_logger().info(f'Collected class vector: {self.class_votes}')
             self.get_logger().info(f'Collected class vote: {msg.data}')
         
         # Only process sign class in IDLE state when not ignoring
