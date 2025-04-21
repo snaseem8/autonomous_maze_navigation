@@ -9,6 +9,7 @@ from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoS
 import numpy as np
 import tf2_ros
 import math
+import time
 
 class NavigatorNode(Node):
     def __init__(self):
@@ -19,7 +20,22 @@ class NavigatorNode(Node):
         image_qos_profile.history = QoSHistoryPolicy.KEEP_LAST
         image_qos_profile.durability = QoSDurabilityPolicy.VOLATILE
         image_qos_profile.reliability = QoSReliabilityPolicy.BEST_EFFORT
+
+        # QoS Profile for AMCL - THIS IS CRITICAL
+        amcl_qos_profile = QoSProfile(depth=5)
+        amcl_qos_profile.reliability = QoSReliabilityPolicy.RELIABLE
+        amcl_qos_profile.durability = QoSDurabilityPolicy.TRANSIENT_LOCAL  # Important to get last published pose
         
+        # Update AMCL subscription with correct QoS
+        self.amcl_sub = self.create_subscription(
+            PoseWithCovarianceStamped, 
+            '/amcl_pose', 
+            self.amcl_callback, 
+            amcl_qos_profile)
+
+        # Add a direct controller timer to ensure regular control updates
+        self.controller_timer = self.create_timer(0.1, self.controller_timer_callback)
+
         # Parameters
         self.cone_angle = np.deg2rad(14.0)  # 14 deg cone for LIDAR
         self.target_distance = 0.5
@@ -27,13 +43,15 @@ class NavigatorNode(Node):
         self.angular_speed_max = 1.5  # rad/s max
         self.kp_linear = 0.4  # P gain for linear error
         self.kp_angular = 1.0  # P gain for angular error
-        self.kp_forward_angular = 0.05  # P gain for angular error when in forward state
+        self.kp_forward_angular = 0.45  # P gain for angular error when in forward state
         self.angular_tolerance = np.deg2rad(5.0)  # 5 deg
         self.class_votes = []
         self.vote_threshold = 2      # require ≥2 votes
         self.last_class     = None   # for fallback single vote
         self.initial_class_done = False   # checks if we are starting in idle
-        
+        self.stabilization_time = 1.5  # seconds to wait after turning
+        self.turn_complete_time = None  # will store the timestamp when turn completes
+        self.state = 'IDLE'  # IDLE, TURNING, STABILIZING, MOVING_FORWARD
 
         
         # Subscribers
@@ -65,7 +83,47 @@ class NavigatorNode(Node):
         self.current_pose = (0.0, 0.0, 0.0)  # (x, y, yaw)
         self.target_yaw = None  # Target yaw for turning
         self.ignore_classification = False
+        self.perform_startup_wiggle()  # starts the wiggle
         
+    def perform_startup_wiggle(self):
+        """Perform a simple left-right wiggle at startup to help AMCL initialize"""
+        self.get_logger().info('*** STARTING WIGGLE NOW ***')
+        
+        # First rotate left
+        cmd = Twist()
+        cmd.angular.z = 0.5
+        self.cmd_vel_pub.publish(cmd)
+        
+        # Keep publishing for a second to ensure it's received
+        for _ in range(10):
+            self.cmd_vel_pub.publish(cmd)
+            time.sleep(0.1)
+        
+        # Now rotate right
+        cmd.angular.z = -0.5
+        self.cmd_vel_pub.publish(cmd)
+        
+        # Keep publishing for a second
+        for _ in range(10):
+            self.cmd_vel_pub.publish(cmd)
+            time.sleep(0.1)
+        
+        # Stop
+        cmd.angular.z = 0.0
+        self.cmd_vel_pub.publish(cmd)
+        
+        self.get_logger().info('*** WIGGLE COMPLETE ***')
+
+    def execute_wiggle_step(self, angular_vel):
+        """Execute a single step of the wiggle sequence"""
+        cmd = Twist()
+        cmd.angular.z = angular_vel
+        self.cmd_vel_pub.publish(cmd)
+        
+        # If this is the final step (stopped), continue with normal processing
+        if angular_vel == 0.0:
+            self.get_logger().info('Wiggle complete, ready for normal operation')
+
     def quaternion_to_yaw(self, quaternion):
         x, y, z, w = quaternion
         siny_cosp = 2.0 * (w * z + x * y)
@@ -73,21 +131,47 @@ class NavigatorNode(Node):
         yaw = math.atan2(siny_cosp, cosy_cosp)
         return yaw
         
-    def amcl_callback(self, msg: PoseWithCovarianceStamped):
-        # extract x, y
-        x = msg.pose.pose.position.x
-        y = msg.pose.pose.position.y
-        # convert quaternion → yaw
-        quat = msg.pose.pose.orientation
-        yaw = self.quaternion_to_yaw([quat.x, quat.y, quat.z, quat.w])
-        self.current_pose = (x, y, yaw)
-
-        # run whichever controller is active
-        self.get_logger().info(f'target yaw: {self.target_yaw}')
+    def controller_timer_callback(self):
+        """Run controllers based on current state at a regular interval"""
         if self.state == 'TURNING' and self.target_yaw is not None:
             self.turn_controller()
-        elif self.state == 'MOVING_FORWARD':
+        elif self.state == 'STABILIZING' and self.turn_complete_time is not None:
+            # Check if stabilization time has elapsed
+            current_time = self.get_clock().now().seconds_nanoseconds()[0]
+            if current_time - self.turn_complete_time >= self.stabilization_time:
+                # Transition to forward movement
+                self.state = 'MOVING_FORWARD'
+                self.get_logger().info('Camera stabilized, moving forward to next wall')
+        elif self.state == 'MOVING_FORWARD' and self.target_yaw is not None:
             self.drive_controller()
+
+    def amcl_callback(self, msg: PoseWithCovarianceStamped):
+        try:
+            # extract x, y
+            x = msg.pose.pose.position.x
+            y = msg.pose.pose.position.y
+            # convert quaternion → yaw
+            # Convert quaternion to yaw
+            quat = msg.pose.pose.orientation
+            yaw = self.quaternion_to_yaw([quat.x, quat.y, quat.z, quat.w])
+            
+            # Log detailed AMCL data
+            if x != 0.0 or y != 0.0 or yaw != 0.0:
+                self.get_logger().info(f"AMCL updated: pos=({x:.3f}, {y:.3f}), yaw={yaw:.3f}")
+            
+            self.current_pose = (x, y, yaw)
+
+            # Check if we have a valid target_yaw before logging
+            if self.target_yaw is not None:
+                self.get_logger().info(f'target yaw: {self.target_yaw:.2f}')
+            
+            # run whichever controller is active
+            if self.state == 'TURNING' and self.target_yaw is not None:
+                self.turn_controller()
+            elif self.state == 'MOVING_FORWARD' and self.target_yaw is not None:
+                self.drive_controller()
+        except Exception as e:
+            self.get_logger().error(f'Error in AMCL callback: {e}')
             
     def normalize_angle(self, angle):
         return math.atan2(math.sin(angle), math.cos(angle))
@@ -264,27 +348,39 @@ class NavigatorNode(Node):
         # Check if turn complete
         if abs(angular_error) <= self.angular_tolerance:
             self.stop_robot()
+            
             if not self.goal_reached:
-                self.state = 'MOVING_FORWARD'
-                self.get_logger().info('Turn complete, moving forward to next wall')
+                # Enter stabilization state instead of directly to MOVING_FORWARD
+                self.state = 'STABILIZING'
+                self.turn_complete_time = self.get_clock().now().seconds_nanoseconds()[0]
+                self.get_logger().info('Turn complete, stabilizing camera...')
             else:
                 self.state = 'IDLE'
                 self.target_yaw = None
                 self.ignore_classification = False
                 self.get_logger().info('Goal reached, navigation stopped')
-        
+
+    def transition_to_forward(self):
+        """Transition to MOVING_FORWARD state after camera stabilization"""
+        self.state = 'MOVING_FORWARD'
+        self.get_logger().info('Camera stabilized, moving forward to next wall')
+            
     def drive_controller(self):
+        if self.current_pose is None or self.target_yaw is None:
+            self.get_logger().warn('Drive controller called with missing pose or target_yaw')
+            return
+            
         if self.front_distance > self.target_distance:
             # forward P‐control
             linear_vel = min(self.kp_linear * (self.front_distance - (self.target_distance - 0.1)),
-                             self.linear_speed_max)
+                            self.linear_speed_max)
 
             # small angular correction to hold heading
             _, _, curr_yaw = self.current_pose
             yaw_error = self.normalize_angle(self.target_yaw - curr_yaw)
             angular_vel = self.kp_forward_angular * yaw_error
             angular_vel = max(min(angular_vel, self.angular_speed_max),
-                              -self.angular_speed_max)
+                            -self.angular_speed_max)
 
             cmd = Twist()
             cmd.linear.x = linear_vel

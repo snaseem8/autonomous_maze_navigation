@@ -89,8 +89,14 @@ class SignClassifierNode(Node):
             
             # Attempt to isolate sign using color thresholding
             mask, color_name = self.isolate_sign_by_color(self.img)
-            sign_region, rect_coord = self.find_sign_region(self.img, mask)
-            x, y, w, h = rect_coord
+
+            # Initialize default values
+            x, y, w, h = 0, 0, 0, 0
+            # Check if find_sign_region returns something before unpacking
+            result = self.find_sign_region(self.img, mask)
+            if result is not None:
+                sign_region, rect_coord = result
+                x, y, w, h = rect_coord
             
             # get pixel centroid of bounding box
             height, width, _ = self.img.shape
@@ -128,12 +134,20 @@ class SignClassifierNode(Node):
     def isolate_sign_by_color(self, image):
         """Identify sign regions using color thresholding"""
         
-        # Color ranges in HSV for different sign colors
+        # # Color ranges in HSV for different sign colors
+        # COLOR_RANGES = {
+        #     'red1': ([0, 175, 175], [10, 255, 255]),
+        #     'red2': ([160, 130, 140], [179, 255, 255]),
+        #     'blue': ([102, 85, 65], [135, 215, 190]),
+        #     'green': ([68, 104, 39], [98, 254, 212])}
+
+        # More focused color ranges that should still be robust
         COLOR_RANGES = {
-            'red1': ([0, 175, 175], [10, 255, 255]),
-            'red2': ([160, 130, 140], [179, 255, 255]),
-            'blue': ([102, 85, 65], [135, 215, 190]),
-            'green': ([68, 104, 39], [98, 254, 212])}
+            'red1': ([0, 150, 130], [10, 255, 255]),      # Red (first range)
+            'red2': ([160, 150, 130], [179, 255, 255]),   # Red (second range)
+            'blue': ([100, 80, 60], [130, 230, 200]),     # Blue
+            'green': ([65, 90, 35], [95, 255, 215])       # Green
+        }
         
         hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         
@@ -185,7 +199,7 @@ class SignClassifierNode(Node):
         return best_mask, best_color
 
     def find_sign_region(self, image, mask):
-        """Extract the sign region using the color mask"""
+        """Extract the sign region using the color mask with basic filtering"""
         if mask is None:
             return None
         
@@ -197,13 +211,22 @@ class SignClassifierNode(Node):
         largest_contour = max(contours, key=cv2.contourArea)
         area = cv2.contourArea(largest_contour)
         
-        if area < 100:
+        # Check both minimum AND maximum area
+        min_area = 150
+        max_area = image.shape[0] * image.shape[1] * 0.4  # Max 40% of frame
+        
+        if area < min_area or area > max_area:
             return None
         
         x, y, w, h = cv2.boundingRect(largest_contour)
         
+        # Aspect ratio filter - most signs are roughly square
+        aspect_ratio = float(w) / h if h > 0 else 0
+        if aspect_ratio < 0.5 or aspect_ratio > 2.0:
+            return None
+        
         # Add a small margin
-        margin = 10
+        margin = 20
         x = max(0, x - margin)
         y = max(0, y - margin)
         w = min(image.shape[1] - x, w + 2*margin)
