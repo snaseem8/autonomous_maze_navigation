@@ -86,5 +86,3 @@ The repository is organized into six folders, each containing a specific compone
   - Scripts for data preprocessing, feature extraction, and model training.
   - Sample image datasets for road signs (e.g., left, right, stop, goal).
 - **Dependencies**: `opencv-python`, `numpy`, `scikit-learn`.
-=======
->>>>>>> e66d2b3decd8385c36a03b266756feb41581ad01
