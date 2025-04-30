@@ -1,220 +1,158 @@
-# Bare Bones Code to View the Image Published from the Turtlebot3 on a Remote Computer
-# Intro to Robotics Research 7785
-# Georgia Institute of Technology
-# Sean Wilson, 2022
-
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
-
-import sys
-
 import numpy as np
 import cv2
 from cv_bridge import CvBridge
 
-class MinimalVideoSubscriber(Node):
+class ImageDebugNode(Node):
+    def __init__(self):
+        super().__init__('image_debug_node')
 
-    def __init__(self):		
-        # Creates the node.
-        super().__init__('minimal_video_subscriber')
-
-        # Set Parameters
+        # Declare parameters for display settings
         self.declare_parameter('show_image_bool', True)
-        self.declare_parameter('window_name', "frame")
+        self.declare_parameter('window_name', 'frame')
+        self._display_image = self.get_parameter('show_image_bool').value
+        self._window_title = self.get_parameter('window_name').value
 
-        # Determine Window Showing Based on Input
-        self._display_image = bool(self.get_parameter('show_image_bool').value)
-
-        # Declare some variables
-        self._titleOriginal = self.get_parameter('window_name').value  # Image Window Title	
+        # Initialize OpenCV window if display is enabled
         if self._display_image:
-            # Set Up Image Viewing
-            cv2.namedWindow(self._titleOriginal, cv2.WINDOW_AUTOSIZE)  # Viewing Window
-            cv2.moveWindow(self._titleOriginal, 50, 50)  # Viewing Window Original Location
-    
-        # Set up QoS Profiles for passing images over WiFi
-        image_qos_profile = QoSProfile(depth=5)
-        image_qos_profile.history = QoSHistoryPolicy.KEEP_LAST
-        image_qos_profile.durability = QoSDurabilityPolicy.VOLATILE 
-        image_qos_profile.reliability = QoSReliabilityPolicy.BEST_EFFORT 
+            cv2.namedWindow(self._window_title, cv2.WINDOW_AUTOSIZE)
+            cv2.moveWindow(self._window_title, 50, 50)
+            cv2.setMouseCallback(self._window_title, self._click_event)
 
-        # Declare that the minimal_video_subscriber node is subscribing to the /camera/image/compressed topic.
-        self._video_subscriber = self.create_subscription(
+        # Configure QoS for image subscription
+        qos_profile = QoSProfile(
+            depth=5,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            reliability=QoSReliabilityPolicy.BEST_EFFORT
+        )
+
+        # Subscribe to compressed image topic
+        self._image_subscriber = self.create_subscription(
             CompressedImage,
             '/image_raw/compressed',
             self._image_callback,
-            image_qos_profile)
-        self._video_subscriber  # Prevents unused variable warning.
+            qos_profile
+        )
+
+        self._bridge = CvBridge()
+        self._current_image = None
+        self._lower_hsv = None
+        self._upper_hsv = None
 
     def _click_event(self, event, x, y, flags, param):
-        """ Callback function to get HSV value from a clicked pixel. """
-        if event == cv2.EVENT_LBUTTONDOWN and self.img is not None:
-            hsv_frame = cv2.cvtColor(self.img, cv2.COLOR_BGR2HSV)
-            clicked_hsv = hsv_frame[y, x]  # Get HSV value at click
-            h, s, v = clicked_hsv
+        # Log HSV values when clicking on the image
+        if event == cv2.EVENT_LBUTTONDOWN and self._current_image is not None:
+            hsv_frame = cv2.cvtColor(self._current_image, cv2.COLOR_BGR2HSV)
+            h, s, v = hsv_frame[y, x]
+            self._lower_hsv = np.array([max(0, h - 10), max(0, s - 40), max(0, v - 40)])
+            self._upper_hsv = np.array([min(179, h + 10), min(255, s + 40), min(255, v + 40)])
+            self.get_logger().info(f'HSV lower: {self._lower_hsv}, upper: {self._upper_hsv}')
 
-            # Define a small range around the clicked HSV value
-            self.lower_hsv = np.array([max(0, h - 10), max(0, s - 40), max(0, v - 40)])
-            self.upper_hsv = np.array([min(179, h + 10), min(255, s + 40), min(255, v + 40)])
-            
-            self.get_logger().info(f"HSV lower: {self.lower_hsv}.   HSV upper: {self.upper_hsv}.")
-        
-    def _image_callback(self, CompressedImage):
+    def _image_callback(self, msg):
         try:
-            # Convert compressed image to OpenCV BGR format
-            self.img = CvBridge().compressed_imgmsg_to_cv2(CompressedImage, "bgr8")
+            # Convert compressed image to BGR
+            self._current_image = self._bridge.compressed_imgmsg_to_cv2(msg, 'bgr8')
             
-            # Attempt to isolate sign using color thresholding
-            mask, color_name = self.isolate_sign_by_color(self.img)
-            sign_region, rect_coord = self.find_sign_region(self.img, mask)
+            # Detect sign by color and find its region
+            mask, color_name = self._isolate_sign_by_color(self._current_image)
+            sign_region, rect_coord = self._find_sign_region(self._current_image, mask)
             x, y, w, h = rect_coord
-            
             mask_area = cv2.countNonZero(mask)
-            self.get_logger().info(f"Mask area: {mask_area}")
-            if sign_region is not None and mask_area > 1000:
-                self.current_image = sign_region
-                # self.get_logger().info(f"using cropped image by color ({color_name})")
-            else:
-                # self.get_logger().warn("Color-based sign detection failed, using full image")
-                self.current_image = self.img
+            self.get_logger().info(f'Mask area: {mask_area}')
+
+            # Use cropped sign region if valid, else full image
+            display_image = sign_region if sign_region is not None and mask_area > 1000 else self._current_image
+
+            # Display image with bounding box if enabled
+            if self._display_image and display_image is not None:
+                cv2.rectangle(self._current_image, (x, y), (x + w, y + h), (0, 255, 20), 3)
+                cv2.imshow(self._window_title, self._current_image)
+                if cv2.waitKey(1) == ord('q'):
+                    cv2.destroyAllWindows()
+                    raise SystemExit
 
         except Exception as e:
-            self.get_logger().error(f"Failed to process image: {str(e)}")
-            self.current_image = None
-        
-        # Displaying image for debugging
-        if self.current_image is not None:    
-            # Display the processed frame with bounding box
-            cv2.rectangle(self.img, (x, y), (x + w, y + h), (0, 255, 20), 3)
-            cv2.imshow('frame', self.img)
+            self.get_logger().error(f'Image processing failed: {str(e)}')
+            self._current_image = None
 
-            # Wait for key press and close window
-            if cv2.waitKey(1) == ord('q'):
-                cv2.destroyAllWindows()  # Close all OpenCV windows when 'q' is pressed
-
-    def isolate_sign_by_color(self, image):
-        """Identify sign regions using color thresholding"""
-        
-        # Color ranges in HSV for different sign colors
-        COLOR_RANGES = {
+    def _isolate_sign_by_color(self, image):
+        # Define HSV color ranges for sign detection
+        color_ranges = {
             'red1': ([0, 175, 175], [10, 255, 255]),
             'red2': ([160, 130, 140], [179, 255, 255]),
             'blue': ([102, 85, 65], [135, 215, 190]),
-            'green': ([68, 104, 39], [98, 254, 212])}
-        
+            'green': ([68, 104, 39], [98, 254, 212])
+        }
+
         hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        
         best_mask = None
         best_color = None
         best_area = 0
-        
-        # Try each color range
-        for color_name, (lower, upper) in COLOR_RANGES.items():
-            lower = np.array(lower)
-            upper = np.array(upper)
-            mask = cv2.inRange(hsv_img, lower, upper)
-            
-            # Clean up mask
-            kernel = np.ones((5, 5), np.uint8)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-            
-            # Find contours
+
+        # Check each color range for the largest contour
+        for color_name, (lower, upper) in color_ranges.items():
+            mask = cv2.inRange(hsv_img, np.array(lower), np.array(upper))
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
             if contours:
                 largest_contour = max(contours, key=cv2.contourArea)
                 area = cv2.contourArea(largest_contour)
-                
                 if area > best_area and area > 100:
                     best_area = area
                     best_mask = mask
                     best_color = color_name
-        
-        # Special handling for red (which spans two HSV ranges)
+
+        # Combine red ranges if red is detected
         if best_color in ['red1', 'red2']:
-            # Combine both red masks
-            red1_lower = np.array(COLOR_RANGES['red1'][0])
-            red1_upper = np.array(COLOR_RANGES['red1'][1])
-            red2_lower = np.array(COLOR_RANGES['red2'][0])
-            red2_upper = np.array(COLOR_RANGES['red2'][1])
-            
-            mask1 = cv2.inRange(hsv_img, red1_lower, red1_upper)
-            mask2 = cv2.inRange(hsv_img, red2_lower, red2_upper)
+            mask1 = cv2.inRange(hsv_img, np.array(color_ranges['red1'][0]), np.array(color_ranges['red1'][1]))
+            mask2 = cv2.inRange(hsv_img, np.array(color_ranges['red2'][0]), np.array(color_ranges['red2'][1]))
             best_mask = cv2.bitwise_or(mask1, mask2)
-            
-            kernel = np.ones((5, 5), np.uint8)
-            best_mask = cv2.morphologyEx(best_mask, cv2.MORPH_OPEN, kernel)
-            best_mask = cv2.morphologyEx(best_mask, cv2.MORPH_CLOSE, kernel)
-            
+            best_mask = cv2.morphologyEx(best_mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+            best_mask = cv2.morphologyEx(best_mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
             best_color = 'red'
-        
+
         return best_mask, best_color
 
-    def find_sign_region(self, image, mask):
-        """Extract the sign region using the color mask"""
+    def _find_sign_region(self, image, mask):
+        # Extract sign region from mask
         if mask is None:
-            return None
-        
+            return None, (0, 0, 0, 0)
+
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
         if not contours:
-            return None
-        
+            return None, (0, 0, 0, 0)
+
         largest_contour = max(contours, key=cv2.contourArea)
-        area = cv2.contourArea(largest_contour)
-        
-        if area < 100:
-            return None
-        
+        if cv2.contourArea(largest_contour) < 100:
+            return None, (0, 0, 0, 0)
+
         x, y, w, h = cv2.boundingRect(largest_contour)
-        
-        # Add a small margin
         margin = 10
         x = max(0, x - margin)
         y = max(0, y - margin)
-        w = min(image.shape[1] - x, w + 2*margin)
-        h = min(image.shape[0] - y, h + 2*margin)
-        
-        rect_coord = (x, y, w, h)
-        
+        w = min(image.shape[1] - x, w + 2 * margin)
+        h = min(image.shape[0] - y, h + 2 * margin)
+
         sign_region = image[y:y+h, x:x+w]
-        
-        if sign_region.size == 0:
-            return None
-        
-        return sign_region, rect_coord
-                
-
-    def get_image(self):
-        return self._imgBGR
-
-    def get_user_input(self):
-        return self._user_input
-
-    def show_image(self, img):
-        cv2.imshow(self._titleOriginal, img)
-        # Cause a slight delay so image is displayed
-        self._user_input = cv2.waitKey(50)  # Use OpenCV keystroke grabber for delay. Done
-        if self.get_user_input() == ord('q'):
-            cv2.destroyAllWindows()
-            raise SystemExit
-
+        return sign_region if sign_region.size > 0 else None, (x, y, w, h)
 
 def main():
-    rclpy.init()  # init routine needed for ROS2.
-    video_subscriber = MinimalVideoSubscriber()  # Create class object to be used.
+    rclpy.init()
+    node = ImageDebugNode()
     
     try:
-        rclpy.spin(video_subscriber)  # Trigger callback processing.		
+        rclpy.spin(node)
     except SystemExit:
-        rclpy.logging.get_logger("Camera Viewer Node Info...").info("Shutting Down")
-    # Clean up and shutdown.
-    video_subscriber.destroy_node()  
+        rclpy.logging.get_logger('ImageDebugNode').info('Shutting down')
+    
+    node.destroy_node()
     rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()

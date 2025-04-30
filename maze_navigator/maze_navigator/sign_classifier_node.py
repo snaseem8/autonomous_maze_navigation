@@ -1,223 +1,166 @@
-#!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import CompressedImage, LaserScan
+from sensor_msgs.msg import CompressedImage
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
 from std_msgs.msg import Int32, Float32, Float32MultiArray
 from cv_bridge import CvBridge
 import cv2
-import os
 import numpy as np
 from maze_navigator.model import initialize_model, predict
 
 class SignClassifierNode(Node):
     def __init__(self):
         super().__init__('sign_classifier_node')
-        
-        # Set up QoS Profiles
-        image_qos_profile = QoSProfile(depth=10)
-        image_qos_profile.history = QoSHistoryPolicy.KEEP_LAST
-        image_qos_profile.durability = QoSDurabilityPolicy.VOLATILE 
-        image_qos_profile.reliability = QoSReliabilityPolicy.BEST_EFFORT 
-        
-        #Set up QoS Profiles for passing images over WiFi
-        image_qos_profile_img = QoSProfile(depth=5)
-        image_qos_profile_img.history = QoSHistoryPolicy.KEEP_LAST
-        image_qos_profile_img.durability = QoSDurabilityPolicy.VOLATILE 
-        image_qos_profile_img.reliability = QoSReliabilityPolicy.BEST_EFFORT 
-        
-        # Set Parameters to show image
+
+        # Configure QoS for image subscription
+        qos_profile = QoSProfile(
+            depth=5,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            reliability=QoSReliabilityPolicy.BEST_EFFORT
+        )
+
+        # Declare display parameters
         self.declare_parameter('show_image_bool', True)
-        self.declare_parameter('window_name', "frame")
-        self.current_image = None
+        self.declare_parameter('window_name', 'frame')
+        self._display_image = self.get_parameter('show_image_bool').value
+        self._window_title = self.get_parameter('window_name').value
 
-        # Determine Window Showing Based on Input
-        self._display_image = bool(self.get_parameter('show_image_bool').value)
-
-        # Declare some variables
-        self._titleOriginal = self.get_parameter('window_name').value
+        # Initialize OpenCV window if display is enabled
         if self._display_image:
-            cv2.namedWindow(self._titleOriginal, cv2.WINDOW_AUTOSIZE)
-            cv2.moveWindow(self._titleOriginal, 50, 50)
-            cv2.setMouseCallback(self._titleOriginal, self._click_event)  # Set mouse click event
-        
-        # Load model
-        model_path = os.path.join(os.path.dirname(__file__), 'knn_model_color.pkl')
+            cv2.namedWindow(self._window_title, cv2.WINDOW_AUTOSIZE)
+            cv2.moveWindow(self._window_title, 50, 50)
+            cv2.setMouseCallback(self._window_title, self._click_event)
+
+        # Load classification model
+        model_path = 'knn_model_color.pkl'  # Adjust path as needed
         try:
-            self.model = initialize_model(model_path)
+            self._model = initialize_model(model_path)
         except Exception as e:
-            self.get_logger().error(f"Failed to initialize model: {str(e)}")
+            self.get_logger().error(f'Failed to load model: {str(e)}')
             raise
-            
-        # Parameters
-        self.classification_distance = 1.0
-        self.min_distance = 0.2  # Stop classifying if closer
-        self.cone_angle = np.deg2rad(14.0)  # 14 deg cone for distance averaging
-        self.coord = None
-        
+
+        # Classification parameters
+        self._classification_distance = 1.0
+        self._min_distance = 0.2
+        self._cone_angle = np.deg2rad(14.0)
+
         # Subscribers
-        self.image_sub = self.create_subscription(
-            CompressedImage, '/image_raw/compressed', self.image_callback, image_qos_profile_img)
-        self.front_dist_sub = self.create_subscription(
-            Float32, '/front_dist', self.front_dist_callback, 10)
-        
+        self._image_subscriber = self.create_subscription(
+            CompressedImage, '/image_raw/compressed', self._image_callback, qos_profile)
+        self._front_dist_subscriber = self.create_subscription(
+            Float32, '/front_dist', self._front_dist_callback, 10)
+
         # Publishers
-        self.class_pub = self.create_publisher(Int32, '/sign_class', 10)
+        self._class_publisher = self.create_publisher(Int32, '/sign_class', 10)
         self._coord_publisher = self.create_publisher(Float32MultiArray, '/coordinates', 10)
-        
-        # State
-        self.current_image = None
-        self.front_distance = float('inf')
-        
+
+        # State variables
+        self._current_image = None
+        self._front_distance = float('inf')
+        self._coord = None
+        self._bridge = CvBridge()
+
     def _click_event(self, event, x, y, flags, param):
-        """ Callback function to get HSV value from a clicked pixel. """
-        if event == cv2.EVENT_LBUTTONDOWN and self.img is not None:
-            hsv_frame = cv2.cvtColor(self.img, cv2.COLOR_BGR2HSV)
-            clicked_hsv = hsv_frame[y, x]  # Get HSV value at click
-            h, s, v = clicked_hsv
+        # Log HSV values on left-click
+        if event == cv2.EVENT_LBUTTONDOWN and self._current_image is not None:
+            hsv_frame = cv2.cvtColor(self._current_image, cv2.COLOR_BGR2HSV)
+            h, s, v = hsv_frame[y, x]
+            lower_hsv = np.array([max(0, h - 10), max(0, s - 40), max(0, v - 40)])
+            upper_hsv = np.array([min(179, h + 10), min(255, s + 40), min(255, v + 40)])
+            self.get_logger().info(f'HSV lower: {lower_hsv}, upper: {upper_hsv}')
 
-            # Define a small range around the clicked HSV value
-            self.lower_hsv = np.array([max(0, h - 10), max(0, s - 40), max(0, v - 40)])
-            self.upper_hsv = np.array([min(179, h + 10), min(255, s + 40), min(255, v + 40)])
-            
-            # self.get_logger().info(f"HSV lower: {self.lower_hsv}.   HSV upper: {self.upper_hsv}.")
-        
-    def image_callback(self, CompressedImage):
+    def _image_callback(self, msg):
         try:
-            # Convert compressed image to OpenCV BGR format
-            self.img = CvBridge().compressed_imgmsg_to_cv2(CompressedImage, "bgr8")
-            
-            mask, _ = self.isolate_sign_by_color(self.img)
-            result = self.find_sign_region(self.img, mask)
-            if result is not None:
-                sign_region, (x, y, w, h) = result
-            else:
-                x = y = w = h = 0
+            # Convert compressed image to BGR
+            self._current_image = self._bridge.compressed_imgmsg_to_cv2(msg, 'bgr8')
+            height, width, _ = self._current_image.shape
 
-            
-            # get pixel centroid of bounding box
-            height, width, _ = self.img.shape
+            # Detect sign region
+            mask, _ = self._isolate_sign_by_color(self._current_image)
+            result = self._find_sign_region(self._current_image, mask)
+            x = y = w = h = 0
+            if result is not None:
+                _, (x, y, w, h) = result
+
+            # Calculate centroid coordinates
             centroid_x = x + w // 2
             centroid_y = y + h // 2
-            if w >= 1 and h >= 1:
-                # Convert x_object pixel value to degrees
-                self.coord = [float(centroid_x), float(centroid_y), float(width//2), float(height//2)] #centroid x, centroid y, image center x, image center y
-            else:
-                self.coord = [float(width//2), float(height//2), float(width//2), float(height//2)] # if bounding box returns 0s, set centroid to image center so there is no error
-            
-            self.current_image = self.img
+            self._coord = [float(centroid_x), float(centroid_y), float(width // 2), float(height // 2)] if w >= 1 and h >= 1 else [float(width // 2), float(height // 2), float(width // 2), float(height // 2)]
 
-        except Exception as e:
-            self.get_logger().error(f"Failed to process image: {str(e)}")
-            self.current_image = None
-            
-        # Publish coordinates
-        if self.coord is not None:
+            # Publish coordinates
             coord_msg = Float32MultiArray()
-            coord_msg.data = self.coord
+            coord_msg.data = self._coord
             self._coord_publisher.publish(coord_msg)
-            # self.get_logger().info(f"Publishing coordinates: {coord_msg.data}")    
-        
-        # Displaying image for debugging
-        if self.current_image is not None:
-            try:
-                # Display the processed frame and bounding box
-                cv2.rectangle(self.img, (x, y), (x + w, y + h), (0, 255, 20), 3)
-                cv2.imshow('frame', self.img)
 
-                # Wait for key press and close window
+            # Display image with bounding box if enabled
+            if self._display_image:
+                cv2.rectangle(self._current_image, (x, y), (x + w, y + h), (0, 255, 20), 3)
+                cv2.imshow(self._window_title, self._current_image)
                 if cv2.waitKey(1) == ord('q'):
                     cv2.destroyAllWindows()
-            except Exception as e:
-                self.get_logger().warn(f"OpenCV display error: {str(e)}")
 
-    def isolate_sign_by_color(self, image):
-        """Identify sign regions using color thresholding"""
-        
-        # # Color ranges in HSV for different sign colors
-        # COLOR_RANGES = {
-        #     'red1': ([0, 175, 175], [10, 255, 255]),
-        #     'red2': ([160, 130, 140], [179, 255, 255]),
-        #     'blue': ([102, 85, 65], [135, 215, 190]),
-        #     'green': ([68, 104, 39], [98, 254, 212])}
+        except Exception as e:
+            self.get_logger().error(f'Image processing error: {str(e)}')
+            self._current_image = None
 
-        # More focused color ranges that should still be robust
-        COLOR_RANGES = {
-            'red1': ([0, 150, 130], [10, 255, 255]),      # Red (first range)
-            'red2': ([160, 150, 130], [179, 255, 255]),   # Red (second range)
-            'blue': ([100, 80, 60], [130, 230, 200]),     # Blue
-            'green': ([65, 90, 35], [95, 255, 215])       # Green
+    def _isolate_sign_by_color(self, image):
+        # Define HSV color ranges for sign detection
+        color_ranges = {
+            'red1': ([0, 150, 130], [10, 255, 255]),
+            'red2': ([160, 150, 130], [179, 255, 255]),
+            'blue': ([100, 80, 60], [130, 230, 200]),
+            'green': ([65, 90, 35], [95, 255, 215])
         }
-        
+
         hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        
         best_mask = None
         best_color = None
         best_area = 0
-        
-        # Try each color range
-        for color_name, (lower, upper) in COLOR_RANGES.items():
-            lower = np.array(lower)
-            upper = np.array(upper)
-            mask = cv2.inRange(hsv_img, lower, upper)
-            
-            # Clean up mask
-            kernel = np.ones((5, 5), np.uint8)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-            
-            # Find contours
+
+        # Check each color range
+        for color_name, (lower, upper) in color_ranges.items():
+            mask = cv2.inRange(hsv_img, np.array(lower), np.array(upper))
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
             if contours:
                 largest_contour = max(contours, key=cv2.contourArea)
                 area = cv2.contourArea(largest_contour)
-                
                 if area > best_area and area > 100:
                     best_area = area
                     best_mask = mask
                     best_color = color_name
-        
-        # Special handling for red (which spans two HSV ranges)
+
+        # Combine red ranges if detected
         if best_color in ['red1', 'red2']:
-            # Combine both red masks
-            red1_lower = np.array(COLOR_RANGES['red1'][0])
-            red1_upper = np.array(COLOR_RANGES['red1'][1])
-            red2_lower = np.array(COLOR_RANGES['red2'][0])
-            red2_upper = np.array(COLOR_RANGES['red2'][1])
-            
-            mask1 = cv2.inRange(hsv_img, red1_lower, red1_upper)
-            mask2 = cv2.inRange(hsv_img, red2_lower, red2_upper)
+            mask1 = cv2.inRange(hsv_img, np.array(color_ranges['red1'][0]), np.array(color_ranges['red1'][1]))
+            mask2 = cv2.inRange(hsv_img, np.array(color_ranges['red2'][0]), np.array(color_ranges['red2'][1]))
             best_mask = cv2.bitwise_or(mask1, mask2)
-            
-            kernel = np.ones((5, 5), np.uint8)
-            best_mask = cv2.morphologyEx(best_mask, cv2.MORPH_OPEN, kernel)
-            best_mask = cv2.morphologyEx(best_mask, cv2.MORPH_CLOSE, kernel)
-            
+            best_mask = cv2.morphologyEx(best_mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+            best_mask = cv2.morphologyEx(best_mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
             best_color = 'red'
-        
+
         return best_mask, best_color
 
-    def find_sign_region(self, image, mask):
-        """Extract the sign region using the color mask, with a hard 40% box‑area cap."""
+    def _find_sign_region(self, image, mask):
+        # Extract sign region with area and aspect ratio filters
         if mask is None:
             return None
 
         img_h, img_w = image.shape[:2]
         max_box_area = img_h * img_w * 0.4
 
-        # find contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return None
 
-        # pick the largest contour
         largest = max(contours, key=cv2.contourArea)
         area = cv2.contourArea(largest)
         if area < 150 or area > max_box_area:
             return None
 
-        # bounding box + margin
         x, y, w, h = cv2.boundingRect(largest)
         margin = 20
         x = max(0, x - margin)
@@ -225,61 +168,41 @@ class SignClassifierNode(Node):
         w = min(img_w - x, w + 2 * margin)
         h = min(img_h - y, h + 2 * margin)
 
-        # enforce box‑area cap
         if w * h > max_box_area:
             return None
 
-        # aspect‑ratio filter
         ar = float(w) / h if h > 0 else 0
         if ar < 0.5 or ar > 2.0:
             return None
 
-        # crop and return
         region = image[y:y+h, x:x+w]
-        if region.size == 0:
-            return None
+        return (region, (x, y, w, h)) if region.size > 0 else None
 
-        return region, (x, y, w, h)
+    def _front_dist_callback(self, msg):
+        # Trigger classification based on distance
+        self._front_distance = msg.data
+        if self._min_distance < self._front_distance <= self._classification_distance:
+            self._classify_image()
 
-
-            
-    def front_dist_callback(self, msg):
-        self.front_distance = msg.data
-        # self.get_logger().info(f'Recieving front distance: {self.front_distance}')
-        
-        # Perform classification if at right distance and haven't classified yet
-        if self.current_image is not None:
-            self.classify_image()
-            
-    # def classify_image(self):
-    #     if self.front_distance <= self.classification_distance: # and self.front_distance > self.min_distance:
-    #         try:
-    #             pred = predict(self.model, self.current_image)
-    #             msg = Int32()
-    #             msg.data = pred
-    #             self.class_pub.publish(msg)
-    #             self.get_logger().info(f'Published sign class: {pred}')
-    #         except Exception as e:
-    #             self.get_logger().error(f"Classification failed: {str(e)}")
-    #     else:
-    #         self.get_logger().warn(f'Not at classification distance: {self.front_distance}m')
-
-    def classify_image(self):
-        try:
-            if self.current_image is not None:
-                pred = predict(self.model, self.current_image)
+    def _classify_image(self):
+        # Classify the current image
+        if self._current_image is not None:
+            try:
+                pred = predict(self._model, self._current_image)
                 msg = Int32()
                 msg.data = pred
-                self.class_pub.publish(msg)
+                self._class_publisher.publish(msg)
                 self.get_logger().info(f'Published sign class: {pred}')
-        except Exception as e:
-            self.get_logger().error(f"Classification failed: {str(e)}")
-            
-        
-def main(args=None):
-    rclpy.init(args=args)
+            except Exception as e:
+                self.get_logger().error(f'Classification error: {str(e)}')
+
+def main():
+    rclpy.init()
     node = SignClassifierNode()
-    rclpy.spin(node)
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     node.destroy_node()
     rclpy.shutdown()
 
