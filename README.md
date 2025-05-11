@@ -1,4 +1,4 @@
-# Robot Navigation and Object Tracking Repository
+# Autonomous Maze Navigation
 
 This repository contains ROS2 packages for robot navigation, object tracking, and maze navigation on the TurtleBot3 Burger, using a combination of computer vision, LIDAR, odometry, PID control, and SLAM. Each package builds on the previous one to achieve the end goal of navigating a maze environment by detecting road signs, avoiding obstacles, and following waypoints.
 
